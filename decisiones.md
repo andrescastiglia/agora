@@ -61,7 +61,11 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   del nombre comercial.
 - Meta exige para OBA que el número lleve al menos 30 días registrado, tenga
   2FA, negocio verificado y nombre aprobado. WhatsApp Manager todavía informa
-  que la solicitud OBA no está disponible.
+  que la solicitud OBA no está disponible. Su registro de actividad comienza
+  el 08/07/2026 y las solicitudes de verificación de nombre aparecen desde el
+  09/07/2026; por prudencia, el siguiente intento de OBA debe hacerse desde el
+  08/08/2026. Business Support no muestra incidencias ni permite abrir un caso
+  por este activo, y Developer Support sólo ofrece autoservicio para WhatsApp.
 - Meta no entrega webhooks productivos mientras la app permanece sin publicar.
   Por eso la publicación debe ocurrir después de la elegibilidad y la revisión
   legal, pero antes de ejecutar el piloto real.
