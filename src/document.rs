@@ -71,7 +71,9 @@ async fn convert_with_libreoffice(
     input: &Path,
     format: &str,
 ) -> Result<String, DocumentError> {
+    let user_installation = libreoffice_profile_argument(directory);
     let arguments = [
+        user_installation.as_str(),
         "--headless",
         "--nologo",
         "--nodefault",
@@ -98,6 +100,13 @@ async fn convert_with_libreoffice(
     };
     let output_path = directory.join(format!("input.{extension}"));
     read_path_capped(&output_path, MAX_EXTRACTED_BYTES).await
+}
+
+fn libreoffice_profile_argument(directory: &Path) -> String {
+    format!(
+        "-env:UserInstallation=file://{}/libreoffice-profile",
+        path(directory)
+    )
 }
 
 async fn run(program: &str, arguments: &[&str]) -> Result<String, DocumentError> {
@@ -187,6 +196,14 @@ mod tests {
         assert_eq!(supported_extension("datos.xlsx"), Some("xlsx"));
         assert_eq!(supported_extension("archivo"), None);
         assert_eq!(supported_extension("malware.exe"), None);
+    }
+
+    #[test]
+    fn isolates_the_libreoffice_profile_in_the_temporary_directory() {
+        assert_eq!(
+            libreoffice_profile_argument(Path::new("/tmp/agora-test")),
+            "-env:UserInstallation=file:///tmp/agora-test/libreoffice-profile"
+        );
     }
 
     #[tokio::test]
