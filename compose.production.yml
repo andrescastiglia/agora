@@ -1,0 +1,30 @@
+services:
+  api:
+    image: ${AGORA_IMAGE:?AGORA_IMAGE is required}
+    container_name: agora-api
+    network_mode: host
+    env_file:
+      - ${AGORA_ENV_FILE:-/etc/agora/agora.env}
+    environment:
+      BIND_ADDR: 127.0.0.1:8088
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: 1.5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8088/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
