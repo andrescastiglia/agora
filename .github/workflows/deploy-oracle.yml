@@ -7,9 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
-  id-token: write
-  attestations: write
 
 concurrency:
   group: oracle-production
@@ -20,6 +17,11 @@ jobs:
     name: publish-image
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -59,6 +61,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: oracle
+    permissions:
+      contents: read
+      packages: read
     env:
       ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
       ORACLE_PORT: ${{ secrets.ORACLE_PORT }}
@@ -81,6 +86,13 @@ jobs:
         run: |
           scp -P "$ORACLE_PORT" compose.production.yml scripts/deploy-oracle.sh \
             "$ORACLE_USER@$ORACLE_HOST:$ORACLE_DEPLOY_PATH/"
+      - name: Authenticate oracle to GHCR for this deployment
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -p "$ORACLE_PORT" \
+            "$ORACLE_USER@$ORACLE_HOST" \
+            "docker login ghcr.io --username '$GITHUB_ACTOR' --password-stdin"
       - name: Deploy exact image digest with automatic rollback
         run: |
           ssh -p "$ORACLE_PORT" "$ORACLE_USER@$ORACLE_HOST" \
@@ -89,3 +101,9 @@ jobs:
              '$ORACLE_DEPLOY_PATH/deploy-oracle.sh' '$IMAGE'"
       - name: Verify public readiness
         run: curl --fail --silent --show-error --max-time 15 https://agora.maese.com.ar/ready
+      - name: Remove temporary GHCR credential
+        if: always()
+        continue-on-error: true
+        run: |
+          ssh -p "$ORACLE_PORT" "$ORACLE_USER@$ORACLE_HOST" \
+            "docker logout ghcr.io"
