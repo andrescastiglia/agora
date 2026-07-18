@@ -92,17 +92,23 @@ porque no pertenecen a la versión 1.
 - [ ] Obtener elegibilidad Official Business Account. El registro de actividad
   de WhatsApp Manager comienza el 08/07/2026 y Meta exige al menos 30 días de
   registro; reintentar desde el 08/08/2026, sujeto también a que apruebe el
-  nombre. Business Support y Developer Support no ofrecen actualmente un caso
-  de soporte humano para adelantar estas revisiones.
-- [x] Completar verificación del negocio y 2FA exigida (Business Portfolio y
-  Tech Provider verificados; 2FA requerida para todos).
+  nombre. Direct Support tramita la revisión del nombre en el caso
+  `28334978916099204`.
+- [x] Completar verificación del negocio y requisito de 2FA para sus usuarios
+  (Business Portfolio y Tech Provider verificados; 2FA requerida para todos).
+- [ ] Activar la verificación en dos pasos específica del número. WhatsApp
+  Manager confirma que está desactivada; dos intentos de alta con un PIN nuevo
+  y confirmado devolvieron `Unknown error` el 18/07/2026. Direct Support está
+  investigando el caso `27824698277217409`; el PIN temporal no se conservó
+  porque la activación falló.
 - [x] Recuperar App Secret y cargarlo sin exponerlo; se validó con un webhook
   firmado por Meta en producción.
 - [x] Agregar y verificar el número productivo en Cloud API (`CONNECTED`,
   `code_verification_status=VERIFIED`; al 18/07/2026 el nombre vigente figura
   `DECLINED`, el nuevo nombre sigue en `PENDING_REVIEW`, OBA está
   `NOT_STARTED` y la creación real del grupo devuelve `131215` por falta de
-  elegibilidad).
+  elegibilidad). La revisión del nombre queda escalada en Direct Support,
+  caso `28334978916099204`.
 - [x] Crear system user y token permanente con permisos mínimos (`agora`,
   `SYSTEM_USER`, válido, `expires_at=0`, WABA y número accesibles).
 - [x] Inventariar WABA ID y Phone Number ID fuera de Git, en
