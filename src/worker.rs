@@ -8,13 +8,12 @@ use uuid::Uuid;
 use crate::{
     config::Config,
     document,
-    object_storage::MediaStore,
     openai::OpenAiClient,
     repository::{
         apply_outgoing_status, attachment_details, claim_job, claim_webhook_event, complete_job,
         complete_webhook_event, create_outgoing_message, enqueue_job, fail_job, fail_webhook_event,
         mark_outgoing_sent, message_text, persist_document, persist_group_message, replace_chunks,
-        save_attachment_object_key, save_extracted_text, search_group,
+        save_attachment_original, save_extracted_text, search_group,
     },
     security::sha256_hex,
     text::{chunks, source_context},
@@ -205,22 +204,24 @@ async fn process_document(
     config: &Config,
     attachment_id: Uuid,
 ) -> Result<(), anyhow::Error> {
-    let (message_id, media_id, filename, _mime_type) = attachment_details(db, attachment_id)
+    let attachment = attachment_details(db, attachment_id)
         .await?
         .context("attachment does not exist")?;
-    let filename = filename.context("document has no filename")?;
-    let whatsapp = WhatsAppClient::from_config(config)?;
-    let (bytes, _, _) = whatsapp
-        .download_media(&media_id, config.document_max_bytes)
-        .await?;
-    let content_sha256 = sha256_hex(&bytes);
-    let object_key = MediaStore::from_config(config)?
-        .put_document(&content_sha256, &filename, &bytes)
-        .await?;
-    save_attachment_object_key(db, attachment_id, &object_key).await?;
+    let filename = attachment.filename.context("document has no filename")?;
+    let bytes = if let Some(bytes) = attachment.original_data {
+        bytes
+    } else {
+        let whatsapp = WhatsAppClient::from_config(config)?;
+        let (bytes, _, _) = whatsapp
+            .download_media(&attachment.provider_media_id, config.document_max_bytes)
+            .await?;
+        let content_sha256 = sha256_hex(&bytes);
+        save_attachment_original(db, attachment_id, &content_sha256, &bytes).await?;
+        bytes
+    };
     let text = document::extract(&bytes, &filename).await?;
-    save_extracted_text(db, attachment_id, &text, &content_sha256).await?;
-    embed_content(db, config, message_id, &text).await
+    save_extracted_text(db, attachment_id, &text).await?;
+    embed_content(db, config, attachment.message_id, &text).await
 }
 
 async fn answer_question(

@@ -22,7 +22,7 @@ porque no pertenecen a la versión 1.
 - [x] Descargar medios con timeout y límite de 25 MiB.
 - [x] Admitir DOC, DOCX, PDF, XLS y XLSX sin ejecutar un shell.
 - [x] Eliminar archivos temporales incluso ante errores.
-- [x] Guardar originales por hash en OCI Object Storage.
+- [x] Guardar originales y su hash en PostgreSQL (`BYTEA`), con límite de 25 MiB.
 - [x] Normalizar, fragmentar y generar embeddings de 1536 dimensiones.
 - [x] Implementar búsqueda híbrida textual/vectorial aislada por grupo.
 - [x] Generar en español con citas y defensa contra instrucciones en fuentes.
@@ -35,7 +35,7 @@ porque no pertenecen a la versión 1.
 - [x] Probar configuración, firma, challenge, límites y errores HTTP.
 - [x] Probar parsers de grupos, documentos y estados.
 - [x] Probar clientes Meta y OpenAI con servidores locales.
-- [x] Probar OCI con un object store en memoria.
+- [x] Probar la persistencia binaria contra PostgreSQL.
 - [x] Probar migraciones, idempotencia, jobs, búsqueda y estados contra pgvector.
 - [x] Ejecutar `cargo fmt --check`.
 - [x] Ejecutar Clippy con `-D warnings`.
@@ -90,41 +90,50 @@ porque no pertenecen a la versión 1.
 - [ ] Obtener elegibilidad Official Business Account.
 - [x] Completar verificación del negocio y 2FA exigida (Business Portfolio y
   Tech Provider verificados; 2FA requerida para todos).
-- [ ] Reingresar contraseña y recuperar App Secret sin exponerlo.
+- [x] Recuperar App Secret y cargarlo sin exponerlo; se validó con un webhook
+  firmado por Meta en producción.
 - [x] Agregar y verificar el número productivo en Cloud API (`CONNECTED`,
-  `code_verification_status=VERIFIED`; el nombre rechazado aún bloquea OBA).
-- [ ] Crear system user y token permanente con permisos mínimos (system user
-  `agora` creado y WABA asignada; Meta bloquea asociar la app hasta reautenticar
-  y aceptar sus términos).
+  `code_verification_status=VERIFIED`; la revisión del nuevo nombre sigue en
+  curso y Groups API devuelve `131215` por falta de elegibilidad).
+- [x] Crear system user y token permanente con permisos mínimos (`agora`,
+  `SYSTEM_USER`, válido, `expires_at=0`, WABA y número accesibles).
 - [x] Inventariar WABA ID y Phone Number ID fuera de Git, en
   `/etc/agora/agora.env`.
 - [ ] Crear el grupo oficial por Groups API e invitar a los seis participantes.
-- [ ] Configurar callback `https://agora.maese.com.ar/webhooks/whatsapp`.
-- [ ] Suscribir `messages`, `group_lifecycle_update`,
+- [x] Configurar callback `https://agora.maese.com.ar/webhooks/whatsapp`.
+- [x] Suscribir `messages`, `group_lifecycle_update`,
   `group_participants_update`, `group_settings_update` y
   `group_status_update`.
 - [x] Configurar URLs de privacidad, términos y eliminación.
-- [ ] Verificar challenge real y webhook firmado.
+- [x] Verificar challenge real y webhook firmado desde el panel de Meta; una
+  segunda entrega idéntica fue deduplicada.
 - [ ] Probar mensaje entrante, documento, respuesta y estados.
-- [ ] Publicar la app sólo después del piloto y revisión.
+- [ ] Publicar la app después de elegibilidad OBA y revisión legal, pero antes
+  del piloto real: Meta no entrega eventos productivos mientras está sin
+  publicar.
 
 ## 6. Secretos y consentimiento
 
 - [x] Cargar `OPENAI_API_KEY` directamente en `oracle` y validarla contra la API
   sin exponerla (`HTTP 200`).
-- [ ] Crear bucket privado OCI y Customer Secret Key.
-- [ ] Cargar endpoint, región, bucket y claves OCI en `oracle`.
-- [ ] Cargar App Secret, token, IDs y allowlist directamente en `oracle`.
+- [x] Cargar App Secret, token permanente, WABA ID y Phone Number ID
+  directamente en `oracle`.
+- [ ] Cargar Group ID y `ALLOWED_WHATSAPP_IDS` directamente en `oracle` cuando
+  existan el grupo elegible y los consentimientos.
+- [x] Preparar un formulario versionado de consentimiento sin datos personales.
 - [ ] Documentar consentimiento de los seis participantes.
 - [x] Publicar política de privacidad propuesta.
 - [x] Publicar términos y procedimiento de exportación/eliminación.
-- [ ] Revisar y aprobar legalmente los textos propuestos.
+- [ ] Revisar y aprobar legalmente los textos propuestos, incluido que el RAG
+  cerrado y limitado de Agora no infringe las condiciones de Meta para
+  proveedores o asistentes de IA.
 
 ## 7. Prueba final
 
 - [x] Firma inválida devuelve `401` en producción.
-- [ ] Evento real se persiste una sola vez.
-- [ ] Documento real queda en OCI, se extrae y se indexa.
+- [ ] Evento real se persiste una sola vez (el webhook de prueba firmado del
+  panel de Meta ya demostró persistencia y deduplicación).
+- [ ] Documento real queda en PostgreSQL, se extrae y se indexa.
 - [ ] `@agora` responde dentro del grupo con citas.
 - [ ] Reiniciar el contenedor no pierde ni duplica jobs.
 - [x] Un despliegue inválido vuelve al digest anterior (digest inexistente
@@ -135,4 +144,4 @@ porque no pertenecen a la versión 1.
 - [ ] Todos los participantes dieron consentimiento.
 
 Agora estará completo cuando no quede ninguna casilla abierta y la evidencia
-externa confirme Meta, GitHub, `oracle`, OCI, OpenAI y el flujo real.
+externa confirme Meta, GitHub, `oracle`, OpenAI y el flujo real.

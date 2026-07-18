@@ -5,8 +5,8 @@ use agora::{
         apply_outgoing_status, attachment_details, claim_job, claim_webhook_event, complete_job,
         complete_webhook_event, create_outgoing_message, enqueue_job, fail_job, fail_webhook_event,
         mark_outgoing_sent, message_text, persist_document, persist_group_message,
-        persist_webhook_event, ping, replace_chunks, save_attachment_object_key,
-        save_extracted_text, search_group,
+        persist_webhook_event, ping, replace_chunks, save_attachment_original, save_extracted_text,
+        search_group,
     },
     whatsapp::{Document, IncomingGroupMessage, IncomingStatus},
 };
@@ -173,20 +173,36 @@ async fn repository_supports_idempotent_ingestion_jobs_search_and_statuses() {
     let attachment_id = persist_document(&db, knowledge_id, &document)
         .await
         .unwrap();
-    assert_eq!(
-        attachment_details(&db, attachment_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .1,
-        "media-1"
-    );
-    save_extracted_text(&db, attachment_id, "contenido extraído", "content-hash")
+    let attachment = attachment_details(&db, attachment_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(attachment.provider_media_id, "media-1");
+    save_attachment_original(
+        &db,
+        attachment_id,
+        "content-hash",
+        b"contenido binario original",
+    )
+    .await
+    .unwrap();
+    save_extracted_text(&db, attachment_id, "contenido extraído")
         .await
         .unwrap();
-    save_attachment_object_key(&db, attachment_id, "documents/content-hash.pdf")
-        .await
-        .unwrap();
+    let stored: (String, Vec<u8>, String) = sqlx::query_as(
+        r#"
+        SELECT content_sha256, original_data, extracted_text
+        FROM attachments
+        WHERE id = $1
+        "#,
+    )
+    .bind(attachment_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(stored.0, "content-hash");
+    assert_eq!(stored.1, b"contenido binario original");
+    assert_eq!(stored.2, "contenido extraído");
 
     assert!(
         enqueue_job(
