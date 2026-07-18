@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: agora_test
+          POSTGRES_USER: agora
+          POSTGRES_PASSWORD: agora
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agora -d agora_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://agora:agora@localhost:5432/agora_test
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Run tests
+        run: cargo test --workspace --all-features --all-targets --locked
+      - name: Install coverage tool
+        run: cargo install cargo-llvm-cov --version 0.8.7 --locked
+      - name: Enforce line coverage
+        run: >-
+          cargo llvm-cov --workspace --all-features --locked
+          --lcov --output-path lcov.info --fail-under-lines 81
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          if-no-files-found: warn
+          retention-days: 14
+
+  security:
+    name: security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.0 --locked
+      - name: Audit dependencies
+        run: cargo audit
+
+  docker:
+    name: docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Build production image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          platforms: linux/amd64
+          tags: agora:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

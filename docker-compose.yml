@@ -20,6 +20,7 @@ services:
     environment:
       DATABASE_URL: postgres://agora:agora@postgres:5432/agora
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-change-me}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-change-me}
       RUST_LOG: ${RUST_LOG:-agora=debug,tower_http=info}
     ports:
       - "8080:8080"

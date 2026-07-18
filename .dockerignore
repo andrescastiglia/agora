@@ -1,0 +1,7 @@
+.git
+.github
+.env
+.playwright-mcp
+auth.json
+target
+*.log
