@@ -86,7 +86,8 @@ porque no pertenecen a la versión 1.
 - [x] Confirmar límite de participantes compatible.
 - [x] Confirmar que Groups API no vincula una Community existente.
 - [ ] Obtener elegibilidad Official Business Account.
-- [ ] Completar verificación del negocio y 2FA exigida.
+- [x] Completar verificación del negocio y 2FA exigida (Business Portfolio y
+  Tech Provider verificados; 2FA requerida para todos).
 - [ ] Reingresar contraseña y recuperar App Secret sin exponerlo.
 - [ ] Agregar y verificar el número productivo en Cloud API.
 - [ ] Crear system user y token permanente con permisos mínimos.
@@ -114,7 +115,7 @@ porque no pertenecen a la versión 1.
 
 ## 7. Prueba final
 
-- [ ] Firma inválida devuelve `401` en producción.
+- [x] Firma inválida devuelve `401` en producción.
 - [ ] Evento real se persiste una sola vez.
 - [ ] Documento real queda en OCI, se extrae y se indexa.
 - [ ] `@agora` responde dentro del grupo con citas.
