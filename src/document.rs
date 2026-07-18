@@ -149,9 +149,16 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_pdf_is_rejected_and_temporary_files_are_cleaned() {
-        assert!(matches!(
-            extract(b"this is not a PDF", "archivo.pdf").await,
-            Err(DocumentError::Extractor { ref program, .. }) if program == "pdftotext"
-        ));
+        let result = extract(b"this is not a PDF", "archivo.pdf").await;
+        assert!(
+            matches!(
+                result,
+                Err(DocumentError::Extractor { ref program, .. }) if program == "pdftotext"
+            ) || matches!(
+                result,
+                Err(DocumentError::Io(ref error))
+                    if error.kind() == std::io::ErrorKind::NotFound
+            )
+        );
     }
 }

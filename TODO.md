@@ -53,7 +53,7 @@ porque no pertenecen a la versión 1.
 - [x] Crear deploy automático serializado con rollback.
 - [x] Crear el environment `oracle` sin aprobación manual.
 - [x] Cargar secrets SSH y `ORACLE_DEPLOY_PATH=/opt/agora`.
-- [ ] Proteger `main`: PR obligatorio, cero aprobaciones, checks obligatorios,
+- [x] Proteger `main`: PR obligatorio, cero aprobaciones, checks obligatorios,
   sin force push ni eliminación.
 - [ ] Abrir PR, obtener CI verde y mergear a `main`.
 - [ ] Confirmar que la imagen GHCR queda pública.
@@ -80,6 +80,7 @@ porque no pertenecen a la versión 1.
 
 - [x] Confirmar app `Agora` y Business Portfolio mediante `auth.json`.
 - [x] Confirmar que el caso de uso WhatsApp está agregado.
+- [x] Configurar categoría `Messaging`, ícono y URLs públicas legales de la app.
 - [x] Verificar requisitos oficiales de Groups API al 17/07/2026.
 - [x] Confirmar límite de participantes compatible.
 - [x] Confirmar que Groups API no vincula una Community existente.
@@ -94,7 +95,7 @@ porque no pertenecen a la versión 1.
 - [ ] Suscribir `messages`, `group_lifecycle_update`,
   `group_participants_update`, `group_settings_update` y
   `group_status_update`.
-- [ ] Configurar URLs de privacidad, términos y eliminación.
+- [x] Configurar URLs de privacidad, términos y eliminación.
 - [ ] Verificar challenge real y webhook firmado.
 - [ ] Probar mensaje entrante, documento, respuesta y estados.
 - [ ] Publicar la app sólo después del piloto y revisión.
