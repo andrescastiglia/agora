@@ -6,6 +6,15 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+install_config() {
+  local destination="$1"
+  local temporary
+  temporary="$(mktemp)"
+  cat >"$temporary"
+  install -m 0644 "$temporary" "$destination"
+  rm -f "$temporary"
+}
+
 install -d -o deploy -g deploy -m 0750 /opt/agora
 install -d -o root -g deploy -m 0750 /etc/agora
 install -d -o root -g root -m 0700 /var/backups/agora
@@ -15,12 +24,21 @@ if [[ ! -f /etc/agora/backup-passphrase ]]; then
   openssl rand -base64 48 >/etc/agora/backup-passphrase
 fi
 
+install_config /etc/nginx/conf.d/agora-log-format.conf <<'NGINX'
+log_format agora_no_args '$remote_addr - $remote_user [$time_local] '
+                         '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                         '"$http_referer" "$http_user_agent"';
+NGINX
+
 if [[ ! -f /etc/nginx/sites-available/agora ]]; then
-  install -m 0644 /dev/stdin /etc/nginx/sites-available/agora <<'NGINX'
+  install_config /etc/nginx/sites-available/agora <<'NGINX'
 server {
     listen 80;
     listen [::]:80;
     server_name agora.maese.com.ar;
+
+    # Query strings can contain Meta's webhook verification token.
+    access_log /var/log/nginx/agora.access.log agora_no_args;
 
     client_max_body_size 1m;
 
@@ -38,6 +56,11 @@ server {
     }
 }
 NGINX
+elif ! grep -qF 'access_log /var/log/nginx/agora.access.log agora_no_args;' \
+  /etc/nginx/sites-available/agora; then
+  sed -i \
+    '/server_name agora\.maese\.com\.ar;/a\    access_log /var/log/nginx/agora.access.log agora_no_args;' \
+    /etc/nginx/sites-available/agora
 fi
 
 ln -sfn /etc/nginx/sites-available/agora /etc/nginx/sites-enabled/agora
@@ -49,7 +72,7 @@ if [[ -f /opt/agora/backup-postgres.sh ]]; then
     /usr/local/sbin/agora-backup-postgres
   install -o root -g root -m 0750 /opt/agora/test-restore-postgres.sh \
     /usr/local/sbin/agora-test-restore-postgres
-  install -m 0644 /dev/stdin /etc/systemd/system/agora-backup.service <<'UNIT'
+  install_config /etc/systemd/system/agora-backup.service <<'UNIT'
 [Unit]
 Description=Encrypted local PostgreSQL backup for Agora
 
@@ -60,7 +83,7 @@ Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 UNIT
-  install -m 0644 /dev/stdin /etc/systemd/system/agora-backup.timer <<'TIMER'
+  install_config /etc/systemd/system/agora-backup.timer <<'TIMER'
 [Unit]
 Description=Daily encrypted local PostgreSQL backup for Agora
 

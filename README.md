@@ -14,12 +14,10 @@ para el webhook HTTPS de Meta, los health checks y los avisos legales públicos.
 flowchart LR
     group["Grupo de WhatsApp"] --> meta["WhatsApp Cloud / Groups API"]
     meta -->|webhook firmado| api["Agora<br/>Rust + Axum"]
-    api --> events["PostgreSQL<br/>eventos y cola"]
+    api --> events["PostgreSQL + pgvector<br/>eventos, cola, originales y conocimiento"]
     events --> worker["Worker idempotente"]
-    worker --> objects["OCI Object Storage<br/>archivos originales"]
     worker --> openai["OpenAI<br/>embeddings + respuesta"]
-    worker --> knowledge["PostgreSQL + pgvector<br/>texto y fragmentos"]
-    knowledge --> worker
+    worker --> events
     worker -->|respuesta con citas| meta
 ```
 
@@ -46,7 +44,7 @@ Implementado:
 - parser tipado de mensajes grupales, documentos y estados de entrega;
 - cola PostgreSQL con `FOR UPDATE SKIP LOCKED`, reintentos y dead letters;
 - descarga limitada de medios y extracción aislada sin ejecutar un shell;
-- almacenamiento de documentos por hash en OCI Object Storage;
+- almacenamiento de documentos originales como binarios en PostgreSQL, junto con su hash;
 - chunking, embeddings, búsqueda híbrida por grupo y respuestas RAG con citas;
 - envío grupal oficial y deduplicación de respuestas salientes;
 - health, readiness y avisos de privacidad, términos y eliminación;
@@ -133,16 +131,6 @@ OpenAI:
 | `OPENAI_RESPONSE_MODEL` | `gpt-5.6-sol` |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` |
 | `OPENAI_EMBEDDING_DIMENSIONS` | `1536` |
-
-OCI Object Storage:
-
-| Variable | Uso |
-| --- | --- |
-| `OCI_OBJECT_STORAGE_ENDPOINT` | Endpoint S3 compatible del namespace |
-| `OCI_OBJECT_STORAGE_REGION` | Región OCI |
-| `OCI_OBJECT_STORAGE_BUCKET` | Bucket privado de documentos |
-| `OCI_OBJECT_STORAGE_ACCESS_KEY_ID` | Customer Secret Key ID |
-| `OCI_OBJECT_STORAGE_SECRET_ACCESS_KEY` | Customer Secret Key |
 
 Los límites y valores restantes están documentados en
 [`.env.example`](.env.example). Ningún secreto debe entrar en Git.

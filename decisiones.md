@@ -47,6 +47,20 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   secretos productivos ni el reingreso de contraseña que Meta pueda exigir.
 - App ID, Business ID, WABA ID y Phone Number ID pueden inventariarse como
   configuración. App Secret, tokens y PIN nunca se envían por chat ni Git.
+- El system user `agora` tiene un token permanente válido (`expires_at=0`) con
+  acceso a la WABA y al número; App Secret, token e IDs productivos están
+  cargados en `/etc/agora/agora.env`.
+- El callback productivo está verificado, la app está vinculada a la WABA y
+  `messages` más los cuatro eventos grupales están suscritos en `v25.0`.
+- La WABA está aprobada y el negocio verificado, pero el número todavía no es
+  elegible para Groups API: la API devuelve `131215` y la revisión del nombre
+  comercial continúa.
+- Meta no entrega webhooks productivos mientras la app permanece sin publicar.
+  Por eso la publicación debe ocurrir después de la elegibilidad y la revisión
+  legal, pero antes de ejecutar el piloto real.
+- Agora es un RAG de dominio limitado al conocimiento del grupo, no un asistente
+  general abierto. La revisión legal previa al piloto debe confirmar que esta
+  caracterización cumple las condiciones vigentes de Meta para servicios de IA.
 
 ## Infraestructura
 
@@ -78,8 +92,10 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   - embeddings: `text-embedding-3-small`, 1536 dimensiones;
   - Responses API con almacenamiento desactivado.
 - Presupuesto mensual esperado: bajo.
-- Los documentos originales se guardan en un bucket privado de OCI Object
-  Storage mediante su endpoint S3 compatible.
+- Los documentos originales se guardan como `BYTEA` en PostgreSQL, junto con
+  su hash SHA-256.
+- Los backups de PostgreSQL incluyen también los documentos originales, por lo
+  que crecerán con el volumen documental.
 - No se contrata un servicio externo de alertas.
 
 ## Privacidad
@@ -96,9 +112,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 
 ## Pendientes que no pueden inventarse
 
-- App Secret y contraseña de reautenticación de Meta.
-- Token permanente del system user y Group ID. WABA ID y Phone Number ID ya
-  están inventariados fuera de Git.
-- Aprobación OBA/Groups API y verificación del negocio.
-- Namespace, región, bucket y Customer Secret Key de OCI Object Storage.
+- Group ID y allowlist de participantes. WABA ID, Phone Number ID, App Secret y
+  token permanente ya están cargados fuera de Git.
+- Aprobación OBA/Groups API y resolución de la revisión del nombre. El negocio
+  ya está verificado.
 - Consentimiento documentado de los seis participantes.

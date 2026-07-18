@@ -17,7 +17,7 @@ La versión 1:
 - responde sólo cuando un participante autorizado invoca `@agora`;
 - aísla siempre datos por `WHATSAPP_GROUP_ID`;
 - usa OpenAI para embeddings y generación;
-- conserva archivos originales en OCI Object Storage;
+- conserva archivos originales como binarios en PostgreSQL;
 - se despliega en `oracle` mediante la imagen ARM64 publicada en GHCR.
 
 No agregar chat 1:1, sitio web, endpoint de búsqueda público, audio, imágenes,
@@ -33,7 +33,7 @@ flowchart TD
     worker --> wa["src/whatsapp.rs<br/>Graph API"]
     worker --> ai["src/openai.rs<br/>Responses + embeddings"]
     worker --> docs["src/document.rs<br/>extracción"]
-    worker --> objects["src/object_storage.rs<br/>OCI S3 compatible"]
+    worker --> repo
 ```
 
 `src/main.rs` sólo arma configuración, pool, migraciones, worker, router y
@@ -85,7 +85,8 @@ preservar:
 - borrado en cascada explícito;
 - embeddings de exactamente 1536 dimensiones mientras el esquema actual siga
   vigente;
-- `object_key` content-addressed para documentos almacenados.
+- `attachments.original_data` conserva el original y
+  `attachments.content_sha256` su hash.
 
 El worker puede ejecutar una operación más de una vez. Cada paso debe producir
 el mismo resultado o detectar que ya fue completado.
@@ -119,8 +120,8 @@ TEST_DATABASE_URL=postgres://agora:agora@localhost:5432/agora \
   cargo llvm-cov --workspace --all-features --locked --fail-under-lines 81
 ```
 
-Los tests obligatorios no llaman a Meta, OpenAI ni OCI. Usar servidores HTTP
-locales, almacenamiento en memoria y PostgreSQL aislado. Una prueba que se omite
+Los tests obligatorios no llaman a Meta ni OpenAI. Usar servidores HTTP locales
+y PostgreSQL aislado. Una prueba que se omite
 por falta de `TEST_DATABASE_URL` no demuestra integración; CI debe definirla.
 
 Si cambian Docker, Nginx o el deploy, validar también:

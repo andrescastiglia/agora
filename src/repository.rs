@@ -321,12 +321,24 @@ pub async fn message_text(db: &PgPool, id: Uuid) -> Result<Option<String>, sqlx:
         .map(Option::flatten)
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct AttachmentDetails {
+    pub message_id: Uuid,
+    pub provider_media_id: String,
+    pub filename: Option<String>,
+    pub original_data: Option<Vec<u8>>,
+}
+
 pub async fn attachment_details(
     db: &PgPool,
     id: Uuid,
-) -> Result<Option<(Uuid, String, Option<String>, Option<String>)>, sqlx::Error> {
+) -> Result<Option<AttachmentDetails>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT message_id, provider_media_id, filename, mime_type FROM attachments WHERE id = $1",
+        r#"
+        SELECT message_id, provider_media_id, filename, original_data
+        FROM attachments
+        WHERE id = $1
+        "#,
     )
     .bind(id)
     .fetch_optional(db)
@@ -337,13 +349,11 @@ pub async fn save_extracted_text(
     db: &PgPool,
     attachment_id: Uuid,
     text: &str,
-    content_sha256: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         UPDATE attachments
         SET extracted_text = $2,
-            content_sha256 = $3,
             processing_status = 'completed',
             processed_at = now(),
             last_error = NULL
@@ -352,22 +362,30 @@ pub async fn save_extracted_text(
     )
     .bind(attachment_id)
     .bind(text)
-    .bind(content_sha256)
     .execute(db)
     .await?;
     Ok(())
 }
 
-pub async fn save_attachment_object_key(
+pub async fn save_attachment_original(
     db: &PgPool,
     attachment_id: Uuid,
-    object_key: &str,
+    content_sha256: &str,
+    original_data: &[u8],
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE attachments SET object_key = $2 WHERE id = $1")
-        .bind(attachment_id)
-        .bind(object_key)
-        .execute(db)
-        .await?;
+    sqlx::query(
+        r#"
+        UPDATE attachments
+        SET content_sha256 = $2,
+            original_data = $3
+        WHERE id = $1
+        "#,
+    )
+    .bind(attachment_id)
+    .bind(content_sha256)
+    .bind(original_data)
+    .execute(db)
+    .await?;
     Ok(())
 }
 

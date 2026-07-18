@@ -2,7 +2,6 @@ pub mod config;
 pub mod document;
 pub mod http;
 pub mod legal;
-pub mod object_storage;
 pub mod openai;
 pub mod repository;
 pub mod security;

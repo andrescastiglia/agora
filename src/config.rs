@@ -2,6 +2,8 @@ use std::{collections::HashMap, env, fmt, net::SocketAddr, str::FromStr, time::D
 
 use thiserror::Error;
 
+pub const MAX_DOCUMENT_BYTES: u64 = 26_214_400;
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret(String);
 
@@ -32,11 +34,6 @@ pub struct Config {
     pub openai_response_model: String,
     pub openai_embedding_model: String,
     pub openai_embedding_dimensions: usize,
-    pub object_storage_endpoint: Option<String>,
-    pub object_storage_region: Option<String>,
-    pub object_storage_bucket: Option<String>,
-    pub object_storage_access_key_id: Option<Secret>,
-    pub object_storage_secret_access_key: Option<Secret>,
     pub bot_mention: String,
     pub allowed_whatsapp_ids: Vec<String>,
     pub webhook_max_body_bytes: usize,
@@ -100,6 +97,13 @@ impl Config {
                 message: "must be 1536 to match the database vector column".into(),
             });
         }
+        let document_max_bytes = parse("DOCUMENT_MAX_BYTES", "26214400")? as u64;
+        if !(1..=MAX_DOCUMENT_BYTES).contains(&document_max_bytes) {
+            return Err(ConfigError::Invalid {
+                name: "DOCUMENT_MAX_BYTES",
+                message: format!("must be between 1 and {MAX_DOCUMENT_BYTES}"),
+            });
+        }
 
         Ok(Self {
             database_url: Secret(required("DATABASE_URL")?),
@@ -124,17 +128,6 @@ impl Config {
                 .cloned()
                 .unwrap_or_else(|| "text-embedding-3-small".into()),
             openai_embedding_dimensions,
-            object_storage_endpoint: optional(&values, "OCI_OBJECT_STORAGE_ENDPOINT"),
-            object_storage_region: optional(&values, "OCI_OBJECT_STORAGE_REGION"),
-            object_storage_bucket: optional(&values, "OCI_OBJECT_STORAGE_BUCKET"),
-            object_storage_access_key_id: optional_secret(
-                &values,
-                "OCI_OBJECT_STORAGE_ACCESS_KEY_ID",
-            ),
-            object_storage_secret_access_key: optional_secret(
-                &values,
-                "OCI_OBJECT_STORAGE_SECRET_ACCESS_KEY",
-            ),
             bot_mention: values
                 .get("BOT_MENTION")
                 .cloned()
@@ -151,7 +144,7 @@ impl Config {
                 })
                 .unwrap_or_default(),
             webhook_max_body_bytes: parse("WEBHOOK_MAX_BODY_BYTES", "1048576")?,
-            document_max_bytes: parse("DOCUMENT_MAX_BYTES", "26214400")? as u64,
+            document_max_bytes,
             worker_poll_interval: Duration::from_millis(poll_ms as u64),
         })
     }
@@ -164,14 +157,6 @@ impl Config {
 
     pub fn openai_ready(&self) -> bool {
         self.openai_api_key.is_some()
-    }
-
-    pub fn object_storage_ready(&self) -> bool {
-        self.object_storage_endpoint.is_some()
-            && self.object_storage_region.is_some()
-            && self.object_storage_bucket.is_some()
-            && self.object_storage_access_key_id.is_some()
-            && self.object_storage_secret_access_key.is_some()
     }
 }
 
@@ -273,5 +258,21 @@ mod tests {
                 message: "must be 1536 to match the database vector column".into(),
             }
         );
+    }
+
+    #[test]
+    fn rejects_document_limits_that_do_not_fit_in_postgres() {
+        for invalid in ["0", "26214401"] {
+            let mut values = minimum();
+            values.insert("DOCUMENT_MAX_BYTES".into(), invalid.into());
+
+            assert_eq!(
+                Config::from_map(values).unwrap_err(),
+                ConfigError::Invalid {
+                    name: "DOCUMENT_MAX_BYTES",
+                    message: "must be between 1 and 26214400".into(),
+                }
+            );
+        }
     }
 }
