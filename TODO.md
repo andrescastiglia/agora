@@ -41,7 +41,8 @@ porque no pertenecen a la versión 1.
 - [x] Ejecutar Clippy con `-D warnings`.
 - [x] Alcanzar cobertura de líneas mayor a 81%: evidencia local `83,86%`.
 - [x] Mantener la suite obligatoria sin llamadas externas.
-- [ ] Confirmar CI verde en GitHub y publicar el artefacto LCOV.
+- [x] Confirmar CI verde en GitHub y publicar el artefacto LCOV (run
+  `29630018119`, artefacto `coverage-lcov`).
 
 ## 3. GitHub
 
