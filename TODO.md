@@ -107,6 +107,9 @@ porque no pertenecen a la versión 1.
   `group_participants_update`, `group_settings_update` y
   `group_status_update`.
 - [x] Configurar URLs de privacidad, términos y eliminación.
+- [x] Reemplazar en el perfil empresarial la URL raíz que devolvía `404` por
+  las páginas públicas existentes de privacidad y términos; la API confirmó
+  `success` y devolvió ambas URLs el 18/07/2026.
 - [x] Verificar challenge real y webhook firmado desde el panel de Meta; una
   segunda entrega idéntica fue deduplicada.
 - [ ] Probar mensaje entrante, documento, respuesta y estados.

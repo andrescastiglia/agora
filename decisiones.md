@@ -56,6 +56,9 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   elegible para Groups API: al 18/07/2026 la API devuelve `131215`, OBA figura
   `NOT_STARTED`, el nombre vigente está `DECLINED` y existe un nuevo nombre en
   `PENDING_REVIEW`.
+- El perfil empresarial enlaza directamente a `/privacy` y `/terms`; se retiró
+  la URL raíz porque devuelve `404` y podía perjudicar la validación externa
+  del nombre comercial.
 - Meta exige para OBA que el número lleve al menos 30 días registrado, tenga
   2FA, negocio verificado y nombre aprobado. WhatsApp Manager todavía informa
   que la solicitud OBA no está disponible.
