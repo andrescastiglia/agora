@@ -56,8 +56,10 @@ porque no pertenecen a la versión 1.
 - [x] Cargar secrets SSH y `ORACLE_DEPLOY_PATH=/opt/agora`.
 - [x] Proteger `main`: PR obligatorio, cero aprobaciones, checks obligatorios,
   sin force push ni eliminación.
-- [ ] Abrir PR, obtener CI verde y mergear a `main`.
-- [ ] Confirmar que la imagen GHCR queda pública.
+- [x] Abrir PR, obtener CI verde y mergear a `main` (PR #1 y correcciones
+  operativas #7/#8).
+- [x] Confirmar que la imagen GHCR queda pública y puede inspeccionarse sin
+  autenticación con plataformas `linux/amd64` y `linux/arm64`.
 
 ## 4. Oracle
 
@@ -71,8 +73,8 @@ porque no pertenecen a la versión 1.
 - [x] Crear base y usuario PostgreSQL `agora` con contraseña aleatoria.
 - [x] Crear `/etc/agora/agora.env` con permisos restringidos.
 - [x] Instalar virtual host y certificado TLS de `agora.maese.com.ar`.
-- [ ] Desplegar una imagen GHCR inmutable y verificar `/health` y `/ready`
-  (el bootstrap ARM64 local ya está saludable).
+- [x] Desplegar una imagen GHCR inmutable y verificar `/health` y `/ready`
+  (run `29634781853`, digest `sha256:55694067985de1948f97198824a67157d4b6b847f762b2590f073c601ea0a850`).
 - [x] Implementar backup local cifrado de PostgreSQL y probar restauración.
 - [x] Confirmar que sólo Nginx `80/443` publica Agora; API y PostgreSQL quedan en
   loopback.
@@ -89,9 +91,13 @@ porque no pertenecen a la versión 1.
 - [x] Completar verificación del negocio y 2FA exigida (Business Portfolio y
   Tech Provider verificados; 2FA requerida para todos).
 - [ ] Reingresar contraseña y recuperar App Secret sin exponerlo.
-- [ ] Agregar y verificar el número productivo en Cloud API.
-- [ ] Crear system user y token permanente con permisos mínimos.
-- [ ] Inventariar WABA ID y Phone Number ID fuera de Git.
+- [x] Agregar y verificar el número productivo en Cloud API (`CONNECTED`,
+  `code_verification_status=VERIFIED`; el nombre rechazado aún bloquea OBA).
+- [ ] Crear system user y token permanente con permisos mínimos (system user
+  `agora` creado y WABA asignada; Meta bloquea asociar la app hasta reautenticar
+  y aceptar sus términos).
+- [x] Inventariar WABA ID y Phone Number ID fuera de Git, en
+  `/etc/agora/agora.env`.
 - [ ] Crear el grupo oficial por Groups API e invitar a los seis participantes.
 - [ ] Configurar callback `https://agora.maese.com.ar/webhooks/whatsapp`.
 - [ ] Suscribir `messages`, `group_lifecycle_update`,
@@ -104,7 +110,8 @@ porque no pertenecen a la versión 1.
 
 ## 6. Secretos y consentimiento
 
-- [ ] Cargar `OPENAI_API_KEY` directamente en `oracle`.
+- [x] Cargar `OPENAI_API_KEY` directamente en `oracle` y validarla contra la API
+  sin exponerla (`HTTP 200`).
 - [ ] Crear bucket privado OCI y Customer Secret Key.
 - [ ] Cargar endpoint, región, bucket y claves OCI en `oracle`.
 - [ ] Cargar App Secret, token, IDs y allowlist directamente en `oracle`.
@@ -120,9 +127,11 @@ porque no pertenecen a la versión 1.
 - [ ] Documento real queda en OCI, se extrae y se indexa.
 - [ ] `@agora` responde dentro del grupo con citas.
 - [ ] Reiniciar el contenedor no pierde ni duplica jobs.
-- [ ] Un despliegue inválido vuelve al digest anterior.
+- [x] Un despliegue inválido vuelve al digest anterior (digest inexistente
+  rechazado, rollback ejecutado y `/ready` continuó saludable).
 - [x] Un backup local se restaura en una base aislada.
-- [ ] Merge de PR a `main` publica y despliega exactamente un digest.
+- [x] Merge de PR a `main` publica y despliega exactamente un digest (run
+  `29634781853`; el índice público, `.deployed-image` y el contenedor coinciden).
 - [ ] Todos los participantes dieron consentimiento.
 
 Agora estará completo cuando no quede ninguna casilla abierta y la evidencia

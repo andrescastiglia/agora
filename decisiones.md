@@ -97,8 +97,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 ## Pendientes que no pueden inventarse
 
 - App Secret y contraseña de reautenticación de Meta.
-- Token permanente del system user, WABA ID, Phone Number ID y Group ID.
+- Token permanente del system user y Group ID. WABA ID y Phone Number ID ya
+  están inventariados fuera de Git.
 - Aprobación OBA/Groups API y verificación del negocio.
-- API key de OpenAI.
 - Namespace, región, bucket y Customer Secret Key de OCI Object Storage.
 - Consentimiento documentado de los seis participantes.
