@@ -81,9 +81,11 @@ async fn process_event(
     }
 
     for message in parse_group_messages(payload)? {
-        if let Some(expected_group) = config.whatsapp_group_id.as_deref()
-            && message.group_id != expected_group
-        {
+        let Some(expected_group) = config.whatsapp_group_id.as_deref() else {
+            tracing::warn!("ignored WhatsApp group message because no group is configured");
+            continue;
+        };
+        if message.group_id != expected_group {
             tracing::warn!(
                 group_id = %message.group_id,
                 "ignored message from unconfigured WhatsApp group"
@@ -92,10 +94,7 @@ async fn process_event(
         }
 
         if !sender_is_allowed(config, &message.sender_id) {
-            tracing::warn!(
-                sender_id = %message.sender_id,
-                "ignored message from sender outside the WhatsApp allowlist"
-            );
+            tracing::warn!("ignored message from sender outside the WhatsApp allowlist");
             continue;
         }
 
@@ -252,15 +251,19 @@ async fn answer_question(
             .await?
     };
     let answer = truncate(&answer, 4_000);
-    let (outgoing_id, status, _) =
+    let (outgoing_id, status, provider_message_id) =
         create_outgoing_message(db, source_message_id, group_id, &answer).await?;
-    if status == "sent" {
+    if outgoing_already_sent(&status, provider_message_id.as_deref()) {
         return Ok(());
     }
     let whatsapp = WhatsAppClient::from_config(config)?;
     let sent = whatsapp.send_group_text(group_id, &answer).await?;
     mark_outgoing_sent(db, outgoing_id, &sent.id).await?;
     Ok(())
+}
+
+fn outgoing_already_sent(status: &str, provider_message_id: Option<&str>) -> bool {
+    provider_message_id.is_some() || matches!(status, "sent" | "delivered" | "read")
 }
 
 fn uuid(payload: &serde_json::Value, field: &'static str) -> Result<Uuid, anyhow::Error> {
@@ -360,6 +363,33 @@ mod tests {
         let restricted = worker_config("sender-1,sender-2");
         assert!(sender_is_allowed(&restricted, "sender-2"));
         assert!(!sender_is_allowed(&restricted, "sender-3"));
+    }
+
+    #[test]
+    fn recognizes_outgoing_messages_that_must_not_be_resent() {
+        assert!(outgoing_already_sent("pending", Some("wamid.out")));
+        assert!(outgoing_already_sent("sent", None));
+        assert!(outgoing_already_sent("delivered", None));
+        assert!(outgoing_already_sent("read", None));
+        assert!(!outgoing_already_sent("pending", None));
+        assert!(!outgoing_already_sent("failed", None));
+    }
+
+    #[tokio::test]
+    async fn ignores_group_messages_until_a_group_is_configured() {
+        let mut config = worker_config("");
+        config.whatsapp_group_id = None;
+        let db = PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/agora")
+            .unwrap();
+
+        process_event(
+            &db,
+            &config,
+            &group_text("wamid.unconfigured", "sender", "contenido"),
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

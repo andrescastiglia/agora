@@ -39,7 +39,7 @@ porque no pertenecen a la versión 1.
 - [x] Probar migraciones, idempotencia, jobs, búsqueda y estados contra pgvector.
 - [x] Ejecutar `cargo fmt --check`.
 - [x] Ejecutar Clippy con `-D warnings`.
-- [x] Alcanzar cobertura de líneas mayor a 81%: evidencia local `86,65%`.
+- [x] Alcanzar cobertura de líneas mayor a 81%: evidencia local `86,84%`.
 - [x] Mantener la suite obligatoria sin llamadas externas.
 - [x] Confirmar CI verde en GitHub y publicar el artefacto LCOV (run
   `29630018119`, artefacto `coverage-lcov`).
