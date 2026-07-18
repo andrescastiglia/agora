@@ -186,7 +186,10 @@ jobs:
              ORACLE_DEPLOY_PATH='$ORACLE_DEPLOY_PATH' \
              '$ORACLE_DEPLOY_PATH/deploy-oracle.sh' '$IMAGE'"
       - name: Verify public readiness
-        run: curl --fail --silent --show-error --max-time 15 https://agora.maese.com.ar/ready
+        run: |
+          ssh -p "$ORACLE_PORT" "$ORACLE_USER@$ORACLE_HOST" \
+            "curl --fail --silent --show-error --max-time 15 \
+             https://agora.maese.com.ar/ready"
       - name: Remove temporary GHCR credential
         if: always()
         continue-on-error: true
