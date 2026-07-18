@@ -101,6 +101,33 @@ async fn repository_supports_idempotent_ingestion_jobs_search_and_statuses() {
         .unwrap();
 
     assert!(
+        persist_webhook_event(&db, &json!({"final_attempt": true}), "hash-final-attempt")
+            .await
+            .unwrap()
+    );
+    let final_event = claim_webhook_event(&db).await.unwrap().unwrap();
+    sqlx::query(
+        r#"
+        UPDATE webhook_events
+        SET attempts = 8, locked_at = now() - interval '16 minutes'
+        WHERE id = $1
+        "#,
+    )
+    .bind(final_event.id)
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(claim_webhook_event(&db).await.unwrap().is_none());
+    let final_event_state: (String, Option<String>) =
+        sqlx::query_as("SELECT processing_status, last_error FROM webhook_events WHERE id = $1")
+            .bind(final_event.id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(final_event_state.0, "dead");
+    assert!(final_event_state.1.unwrap().contains("final"));
+
+    assert!(
         persist_webhook_event(&db, &json!({"failed": true}), "hash-fail")
             .await
             .unwrap()
@@ -200,6 +227,33 @@ async fn repository_supports_idempotent_ingestion_jobs_search_and_statuses() {
     let reclaimed_job = claim_job(&db).await.unwrap().unwrap();
     assert_eq!(reclaimed_job.id, stale_job.id);
     complete_job(&db, reclaimed_job.id).await.unwrap();
+
+    assert!(
+        enqueue_job(&db, "final-attempt", "final-attempt-1", json!({}))
+            .await
+            .unwrap()
+    );
+    let final_job = claim_job(&db).await.unwrap().unwrap();
+    sqlx::query(
+        r#"
+        UPDATE jobs
+        SET attempts = max_attempts, locked_at = now() - interval '16 minutes'
+        WHERE id = $1
+        "#,
+    )
+    .bind(final_job.id)
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(claim_job(&db).await.unwrap().is_none());
+    let final_job_state: (String, Option<String>) =
+        sqlx::query_as("SELECT status, last_error FROM jobs WHERE id = $1")
+            .bind(final_job.id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(final_job_state.0, "dead");
+    assert!(final_job_state.1.unwrap().contains("final"));
 
     assert!(
         enqueue_job(&db, "retry", "retry-1", json!({}))

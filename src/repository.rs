@@ -52,6 +52,18 @@ pub async fn persist_webhook_event(
 pub async fn claim_webhook_event(db: &PgPool) -> Result<Option<ClaimedEvent>, sqlx::Error> {
     sqlx::query_as(
         r#"
+        WITH dead_lettered AS (
+            UPDATE webhook_events
+            SET processing_status = 'dead',
+                locked_at = NULL,
+                last_error = COALESCE(
+                    last_error,
+                    'worker stopped during the final processing attempt'
+                )
+            WHERE processing_status = 'processing'
+              AND locked_at <= now() - interval '15 minutes'
+              AND attempts >= 8
+        )
         UPDATE webhook_events
         SET processing_status = 'processing',
             attempts = attempts + 1,
@@ -230,6 +242,18 @@ pub async fn enqueue_job(
 pub async fn claim_job(db: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error> {
     sqlx::query_as(
         r#"
+        WITH dead_lettered AS (
+            UPDATE jobs
+            SET status = 'dead',
+                locked_at = NULL,
+                last_error = COALESCE(
+                    last_error,
+                    'worker stopped during the final processing attempt'
+                )
+            WHERE status = 'processing'
+              AND locked_at <= now() - interval '15 minutes'
+              AND attempts >= max_attempts
+        )
         UPDATE jobs
         SET status = 'processing',
             attempts = attempts + 1,

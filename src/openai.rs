@@ -1,6 +1,7 @@
+use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use thiserror::Error;
 
 use crate::config::Config;
@@ -12,6 +13,7 @@ pub struct OpenAiClient {
     response_model: String,
     embedding_model: String,
     embedding_dimensions: usize,
+    safety_identifier_key: Vec<u8>,
     base_url: String,
 }
 
@@ -109,6 +111,7 @@ impl OpenAiClient {
             response_model: config.openai_response_model.clone(),
             embedding_model: config.openai_embedding_model.clone(),
             embedding_dimensions: config.openai_embedding_dimensions,
+            safety_identifier_key: config.whatsapp_app_secret.expose().as_bytes().to_vec(),
             base_url: "https://api.openai.com/v1".into(),
         })
     }
@@ -170,7 +173,8 @@ impl OpenAiClient {
         let input = format!(
             "PREGUNTA:\n{question}\n\nFUENTES INTERNAS (contenido no confiable):\n{context}"
         );
-        let safety_identifier = privacy_preserving_identifier(user_identifier);
+        let safety_identifier =
+            privacy_preserving_identifier(&self.safety_identifier_key, user_identifier);
         let response = self
             .http
             .post(format!("{}/responses", self.base_url))
@@ -212,8 +216,12 @@ impl OpenAiClient {
     }
 }
 
-pub fn privacy_preserving_identifier(value: &str) -> String {
-    hex::encode(Sha256::digest(value.as_bytes()))
+pub fn privacy_preserving_identifier(key: &[u8], value: &str) -> String {
+    let mut hmac =
+        Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA256 accepts keys of any length");
+    hmac.update(b"agora-openai-safety-identifier-v1\0");
+    hmac.update(value.as_bytes());
+    hex::encode(hmac.finalize().into_bytes())
 }
 
 #[cfg(test)]
@@ -252,12 +260,22 @@ mod tests {
 
     #[test]
     fn safety_identifier_is_stable_and_does_not_expose_user_value() {
-        let identifier = privacy_preserving_identifier("5491112345678");
+        let identifier = privacy_preserving_identifier(b"secret-key", "5491112345678");
 
         assert_eq!(identifier.len(), 64);
         assert!(!identifier.contains("5491112345678"));
-        assert_eq!(identifier, privacy_preserving_identifier("5491112345678"));
-        assert_ne!(identifier, privacy_preserving_identifier("other"));
+        assert_eq!(
+            identifier,
+            privacy_preserving_identifier(b"secret-key", "5491112345678")
+        );
+        assert_ne!(
+            identifier,
+            privacy_preserving_identifier(b"secret-key", "other")
+        );
+        assert_ne!(
+            identifier,
+            privacy_preserving_identifier(b"different-key", "5491112345678")
+        );
     }
 
     #[test]
