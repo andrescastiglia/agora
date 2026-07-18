@@ -39,7 +39,8 @@ porque no pertenecen a la versión 1.
 - [x] Probar migraciones, idempotencia, jobs, búsqueda y estados contra pgvector.
 - [x] Ejecutar `cargo fmt --check`.
 - [x] Ejecutar Clippy con `-D warnings`.
-- [x] Alcanzar cobertura de líneas mayor a 81%: evidencia local `87,11%`.
+- [x] Alcanzar cobertura de líneas mayor a 81%: evidencia local `88,10%` al
+  18/07/2026.
 - [x] Mantener la suite obligatoria sin llamadas externas.
 - [x] Confirmar CI verde en GitHub y publicar el artefacto LCOV (run
   `29630018119`, artefacto `coverage-lcov`).
@@ -56,8 +57,8 @@ porque no pertenecen a la versión 1.
 - [x] Cargar secrets SSH y `ORACLE_DEPLOY_PATH=/opt/agora`.
 - [x] Proteger `main`: PR obligatorio, cero aprobaciones, checks obligatorios,
   sin force push ni eliminación.
-- [x] Abrir PR, obtener CI verde y mergear a `main` (PR #1 y correcciones
-  operativas #7/#8).
+- [x] Abrir PR, obtener CI verde y mergear a `main` (PR #1, correcciones
+  operativas #7/#8 y cierre de preparación #11).
 - [x] Confirmar que la imagen GHCR queda pública y puede inspeccionarse sin
   autenticación con plataformas `linux/amd64` y `linux/arm64`.
 
@@ -74,7 +75,8 @@ porque no pertenecen a la versión 1.
 - [x] Crear `/etc/agora/agora.env` con permisos restringidos.
 - [x] Instalar virtual host y certificado TLS de `agora.maese.com.ar`.
 - [x] Desplegar una imagen GHCR inmutable y verificar `/health` y `/ready`
-  (run `29634781853`, digest `sha256:55694067985de1948f97198824a67157d4b6b847f762b2590f073c601ea0a850`).
+  (último run `29662623493`, digest
+  `sha256:bd61017f3ac57cc95fc2f98ec895ecd53c95d915cdd3c2499dd5f9528a247a9d`).
 - [x] Implementar backup local cifrado de PostgreSQL y probar restauración.
 - [x] Confirmar que sólo Nginx `80/443` publica Agora; API y PostgreSQL quedan en
   loopback.
@@ -87,7 +89,11 @@ porque no pertenecen a la versión 1.
 - [x] Verificar requisitos oficiales de Groups API al 17/07/2026.
 - [x] Confirmar límite de participantes compatible.
 - [x] Confirmar que Groups API no vincula una Community existente.
-- [ ] Obtener elegibilidad Official Business Account.
+- [ ] Obtener elegibilidad Official Business Account. El registro de actividad
+  de WhatsApp Manager comienza el 08/07/2026 y Meta exige al menos 30 días de
+  registro; reintentar desde el 08/08/2026, sujeto también a que apruebe el
+  nombre. Business Support y Developer Support no ofrecen actualmente un caso
+  de soporte humano para adelantar estas revisiones.
 - [x] Completar verificación del negocio y 2FA exigida (Business Portfolio y
   Tech Provider verificados; 2FA requerida para todos).
 - [x] Recuperar App Secret y cargarlo sin exponerlo; se validó con un webhook
@@ -154,8 +160,10 @@ porque no pertenecen a la versión 1.
 - [x] Un despliegue inválido vuelve al digest anterior (digest inexistente
   rechazado, rollback ejecutado y `/ready` continuó saludable).
 - [x] Un backup local se restaura en una base aislada.
-- [x] Merge de PR a `main` publica y despliega exactamente un digest (run
-  `29634781853`; el índice público, `.deployed-image` y el contenedor coinciden).
+- [x] Merge de PR a `main` publica y despliega exactamente un digest (PR #11,
+  run `29662623493`; el índice público, `.deployed-image` y el contenedor
+  coinciden en
+  `sha256:bd61017f3ac57cc95fc2f98ec895ecd53c95d915cdd3c2499dd5f9528a247a9d`).
 - [x] Todos los participantes dieron consentimiento (evidencia conservada fuera
   del proyecto; confirmado por el responsable el 18/07/2026).
 
