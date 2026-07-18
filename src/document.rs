@@ -1,4 +1,9 @@
-use std::{io::SeekFrom, path::Path, process::Stdio};
+use std::{
+    io::SeekFrom,
+    path::Path,
+    process::{ExitStatus, Stdio},
+    time::Duration,
+};
 
 use tempfile::TempDir;
 use thiserror::Error;
@@ -18,6 +23,8 @@ pub enum DocumentError {
     Io(#[from] std::io::Error),
     #[error("{program} failed: {message}")]
     Extractor { program: String, message: String },
+    #[error("{program} exceeded the extraction timeout")]
+    Timeout { program: String },
     #[error("document contains no extractable text")]
     Empty,
     #[error("extracted document is too large")]
@@ -64,29 +71,24 @@ async fn convert_with_libreoffice(
     input: &Path,
     format: &str,
 ) -> Result<String, DocumentError> {
-    let output = Command::new("libreoffice")
-        .args([
-            "--headless",
-            "--nologo",
-            "--nodefault",
-            "--nolockcheck",
-            "--nofirststartwizard",
-            "--convert-to",
-            format,
-            "--outdir",
-            path(directory),
-            path(input),
-        ])
-        .stdin(Stdio::null())
-        .output()
-        .await?;
-    if !output.status.success() {
+    let arguments = [
+        "--headless",
+        "--nologo",
+        "--nodefault",
+        "--nolockcheck",
+        "--nofirststartwizard",
+        "--convert-to",
+        format,
+        "--outdir",
+        path(directory),
+        path(input),
+    ];
+    let (status, _stdout, stderr) =
+        execute("libreoffice", &arguments, Duration::from_secs(120)).await?;
+    if !status.success() {
         return Err(DocumentError::Extractor {
             program: "libreoffice".into(),
-            message: String::from_utf8_lossy(&output.stderr)
-                .chars()
-                .take(1000)
-                .collect(),
+            message: read_file_prefix(stderr, 1000).await?,
         });
     }
     let extension = if format.starts_with("csv") {
@@ -99,15 +101,7 @@ async fn convert_with_libreoffice(
 }
 
 async fn run(program: &str, arguments: &[&str]) -> Result<String, DocumentError> {
-    let stdout = tempfile::tempfile()?;
-    let stderr = tempfile::tempfile()?;
-    let status = Command::new(program)
-        .args(arguments)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(stdout.try_clone()?))
-        .stderr(Stdio::from(stderr.try_clone()?))
-        .status()
-        .await?;
+    let (status, stdout, stderr) = execute(program, arguments, Duration::from_secs(120)).await?;
     if !status.success() {
         return Err(DocumentError::Extractor {
             program: program.into(),
@@ -115,6 +109,33 @@ async fn run(program: &str, arguments: &[&str]) -> Result<String, DocumentError>
         });
     }
     read_file_capped(stdout, MAX_EXTRACTED_BYTES).await
+}
+
+async fn execute(
+    program: &str,
+    arguments: &[&str],
+    timeout: Duration,
+) -> Result<(ExitStatus, std::fs::File, std::fs::File), DocumentError> {
+    let stdout = tempfile::tempfile()?;
+    let stderr = tempfile::tempfile()?;
+    let mut child = Command::new(program)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout.try_clone()?))
+        .stderr(Stdio::from(stderr.try_clone()?))
+        .kill_on_drop(true)
+        .spawn()?;
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(result) => result?,
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(DocumentError::Timeout {
+                program: program.into(),
+            });
+        }
+    };
+    Ok((status, stdout, stderr))
 }
 
 async fn read_path_capped(path: &Path, maximum: usize) -> Result<String, DocumentError> {
@@ -196,6 +217,14 @@ mod tests {
         assert!(matches!(
             read_file_capped(file, MAX_EXTRACTED_BYTES).await,
             Err(DocumentError::TooLarge)
+        ));
+    }
+
+    #[tokio::test]
+    async fn terminates_extractors_that_exceed_the_timeout() {
+        assert!(matches!(
+            execute("sleep", &["1"], Duration::from_millis(10)).await,
+            Err(DocumentError::Timeout { ref program }) if program == "sleep"
         ));
     }
 
