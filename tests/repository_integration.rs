@@ -11,10 +11,18 @@ use agora::{
     whatsapp::{Document, IncomingGroupMessage, IncomingStatus},
 };
 use serde_json::json;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{Connection, PgConnection, postgres::PgPoolOptions};
 
-async fn database() -> Option<sqlx::PgPool> {
+async fn database() -> Option<(sqlx::PgPool, PgConnection)> {
     let url = env::var("TEST_DATABASE_URL").ok()?;
+    let mut database_lock = PgConnection::connect(&url)
+        .await
+        .expect("test database must be reachable for locking");
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(4_242_421_234_i64)
+        .execute(&mut database_lock)
+        .await
+        .expect("test database advisory lock must be available");
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(&url)
@@ -30,7 +38,7 @@ async fn database() -> Option<sqlx::PgPool> {
     .execute(&pool)
     .await
     .expect("test database must be resettable");
-    Some(pool)
+    Some((pool, database_lock))
 }
 
 fn message(external_id: &str, text: Option<&str>) -> IncomingGroupMessage {
@@ -51,7 +59,7 @@ fn message(external_id: &str, text: Option<&str>) -> IncomingGroupMessage {
 
 #[tokio::test]
 async fn repository_supports_idempotent_ingestion_jobs_search_and_statuses() {
-    let Some(db) = database().await else {
+    let Some((db, _database_lock)) = database().await else {
         eprintln!("TEST_DATABASE_URL is not set; repository integration test skipped");
         return;
     };
@@ -72,6 +80,25 @@ async fn repository_supports_idempotent_ingestion_jobs_search_and_statuses() {
     let event = claim_webhook_event(&db).await.unwrap().unwrap();
     assert_eq!(event.payload, webhook);
     complete_webhook_event(&db, event.id).await.unwrap();
+
+    assert!(
+        persist_webhook_event(&db, &json!({"stale": true}), "hash-stale")
+            .await
+            .unwrap()
+    );
+    let stale_event = claim_webhook_event(&db).await.unwrap().unwrap();
+    sqlx::query(
+        "UPDATE webhook_events SET locked_at = now() - interval '16 minutes' WHERE id = $1",
+    )
+    .bind(stale_event.id)
+    .execute(&db)
+    .await
+    .unwrap();
+    let reclaimed_event = claim_webhook_event(&db).await.unwrap().unwrap();
+    assert_eq!(reclaimed_event.id, stale_event.id);
+    complete_webhook_event(&db, reclaimed_event.id)
+        .await
+        .unwrap();
 
     assert!(
         persist_webhook_event(&db, &json!({"failed": true}), "hash-fail")
@@ -158,6 +185,21 @@ async fn repository_supports_idempotent_ingestion_jobs_search_and_statuses() {
     assert_eq!(job.job_type, "embed_message");
     assert_eq!(job.payload["message_id"], knowledge_id.to_string());
     complete_job(&db, job.id).await.unwrap();
+
+    assert!(
+        enqueue_job(&db, "stale", "stale-1", json!({}))
+            .await
+            .unwrap()
+    );
+    let stale_job = claim_job(&db).await.unwrap().unwrap();
+    sqlx::query("UPDATE jobs SET locked_at = now() - interval '16 minutes' WHERE id = $1")
+        .bind(stale_job.id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let reclaimed_job = claim_job(&db).await.unwrap().unwrap();
+    assert_eq!(reclaimed_job.id, stale_job.id);
+    complete_job(&db, reclaimed_job.id).await.unwrap();
 
     assert!(
         enqueue_job(&db, "retry", "retry-1", json!({}))

@@ -91,10 +91,15 @@ async fn process_event(
             continue;
         }
 
-        let (message_id, inserted) = persist_group_message(db, &message).await?;
-        if !inserted {
+        if !sender_is_allowed(config, &message.sender_id) {
+            tracing::warn!(
+                sender_id = %message.sender_id,
+                "ignored message from sender outside the WhatsApp allowlist"
+            );
             continue;
         }
+
+        let (message_id, _) = persist_group_message(db, &message).await?;
 
         if let Some(text) = message.text.as_deref() {
             enqueue_job(
@@ -105,9 +110,7 @@ async fn process_event(
             )
             .await?;
 
-            let sender_allowed = config.allowed_whatsapp_ids.is_empty()
-                || config.allowed_whatsapp_ids.contains(&message.sender_id);
-            if sender_allowed && let Some(question) = question_for_bot(text, &config.bot_mention) {
+            if let Some(question) = question_for_bot(text, &config.bot_mention) {
                 enqueue_job(
                     db,
                     "answer_question",
@@ -147,6 +150,14 @@ async fn process_event(
     }
 
     Ok(())
+}
+
+fn sender_is_allowed(config: &Config, sender_id: &str) -> bool {
+    config.allowed_whatsapp_ids.is_empty()
+        || config
+            .allowed_whatsapp_ids
+            .iter()
+            .any(|allowed| allowed == sender_id)
 }
 
 async fn process_job(
@@ -286,9 +297,45 @@ fn truncate(value: &str, maximum_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, env};
+
     use serde_json::json;
+    use sqlx::{Connection, PgConnection, postgres::PgPoolOptions};
 
     use super::*;
+
+    fn worker_config(allowed_ids: &str) -> Config {
+        Config::from_map(HashMap::from([
+            ("DATABASE_URL".into(), "postgres://localhost/agora".into()),
+            ("WHATSAPP_VERIFY_TOKEN".into(), "verify".into()),
+            ("WHATSAPP_APP_SECRET".into(), "secret".into()),
+            ("WHATSAPP_GROUP_ID".into(), "group-test".into()),
+            ("ALLOWED_WHATSAPP_IDS".into(), allowed_ids.into()),
+        ]))
+        .unwrap()
+    }
+
+    fn group_text(message_id: &str, sender_id: &str, text: &str) -> serde_json::Value {
+        json!({
+            "object": "whatsapp_business_account",
+            "entry": [{
+                "id": "waba-test",
+                "changes": [{
+                    "field": "messages",
+                    "value": {
+                        "messages": [{
+                            "from": sender_id,
+                            "group_id": "group-test",
+                            "id": message_id,
+                            "timestamp": "1700000000",
+                            "type": "text",
+                            "text": {"body": text}
+                        }]
+                    }
+                }]
+            }]
+        })
+    }
 
     #[test]
     fn parses_required_job_fields() {
@@ -305,5 +352,87 @@ mod tests {
     fn truncates_on_unicode_boundaries() {
         assert_eq!(truncate("áéíóú", 4), "áéí…");
         assert_eq!(truncate("corto", 10), "corto");
+    }
+
+    #[test]
+    fn checks_the_sender_allowlist() {
+        assert!(sender_is_allowed(&worker_config(""), "any-sender"));
+        let restricted = worker_config("sender-1,sender-2");
+        assert!(sender_is_allowed(&restricted, "sender-2"));
+        assert!(!sender_is_allowed(&restricted, "sender-3"));
+    }
+
+    #[tokio::test]
+    async fn rejects_unauthorized_content_and_reenqueues_missing_jobs() {
+        let Ok(database_url) = env::var("TEST_DATABASE_URL") else {
+            eprintln!("TEST_DATABASE_URL is not set; worker integration test skipped");
+            return;
+        };
+        let mut database_lock = PgConnection::connect(&database_url).await.unwrap();
+        sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(4_242_421_234_i64)
+            .execute(&mut database_lock)
+            .await
+            .unwrap();
+        let db = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&database_url)
+            .await
+            .unwrap();
+        sqlx::migrate!().run(&db).await.unwrap();
+        let suffix = Uuid::new_v4();
+        let denied_id = format!("wamid.denied.{suffix}");
+        let allowed_id = format!("wamid.allowed.{suffix}");
+        let config = worker_config("allowed-sender");
+
+        process_event(
+            &db,
+            &config,
+            &group_text(&denied_id, "denied-sender", "contenido privado"),
+        )
+        .await
+        .unwrap();
+        let denied_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM messages WHERE whatsapp_message_id = $1")
+                .bind(&denied_id)
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert_eq!(denied_count, 0);
+
+        let parsed = parse_group_messages(&group_text(
+            &allowed_id,
+            "allowed-sender",
+            "@agora: pregunta",
+        ))
+        .unwrap();
+        persist_group_message(&db, &parsed[0]).await.unwrap();
+        process_event(
+            &db,
+            &config,
+            &group_text(&allowed_id, "allowed-sender", "@agora: pregunta"),
+        )
+        .await
+        .unwrap();
+        let job_count: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs WHERE dedupe_key = $1")
+            .bind(&allowed_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(job_count, 2);
+
+        process_event(
+            &db,
+            &config,
+            &group_text(&allowed_id, "allowed-sender", "@agora: pregunta"),
+        )
+        .await
+        .unwrap();
+        let job_count: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs WHERE dedupe_key = $1")
+            .bind(&allowed_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(job_count, 2);
     }
 }

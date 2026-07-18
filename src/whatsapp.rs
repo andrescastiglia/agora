@@ -399,7 +399,7 @@ impl WhatsAppClient {
                 body: "media exceeds configured maximum".into(),
             });
         }
-        let media_response = self
+        let mut media_response = self
             .http
             .get(metadata.url)
             .bearer_auth(&self.access_token)
@@ -421,20 +421,35 @@ impl WhatsAppClient {
                 body: "media exceeds configured maximum".into(),
             });
         }
-        let bytes = media_response.bytes().await?;
-        if bytes.len() as u64 > maximum_bytes {
-            return Err(WhatsAppError::Api {
-                status: reqwest::StatusCode::PAYLOAD_TOO_LARGE,
-                body: "media exceeds configured maximum".into(),
-            });
+        let initial_capacity = media_response
+            .content_length()
+            .unwrap_or_default()
+            .min(maximum_bytes)
+            .min(usize::MAX as u64) as usize;
+        let mut bytes = Vec::with_capacity(initial_capacity);
+        while let Some(chunk) = media_response.chunk().await? {
+            let Some(next_length) = bytes.len().checked_add(chunk.len()) else {
+                return Err(media_too_large());
+            };
+            if next_length as u64 > maximum_bytes {
+                return Err(media_too_large());
+            }
+            bytes.extend_from_slice(&chunk);
         }
-        Ok((bytes.to_vec(), metadata.mime_type, metadata.sha256))
+        Ok((bytes, metadata.mime_type, metadata.sha256))
+    }
+}
+
+fn media_too_large() -> WhatsAppError {
+    WhatsAppError::Api {
+        status: reqwest::StatusCode::PAYLOAD_TOO_LARGE,
+        body: "media exceeds configured maximum".into(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, convert::Infallible};
 
     use axum::{
         Json, Router,
@@ -443,6 +458,8 @@ mod tests {
         http::{HeaderMap, Response, StatusCode},
         routing::{get, post},
     };
+    use bytes::Bytes;
+    use futures_util::stream;
     use serde_json::json;
 
     use super::*;
@@ -785,5 +802,33 @@ mod tests {
                 ..
             })
         ));
+
+        async fn undeclared_too_large() -> Response<Body> {
+            Response::builder()
+                .body(Body::from_stream(stream::iter([
+                    Ok::<_, Infallible>(Bytes::from_static(b"123456")),
+                    Ok(Bytes::from_static(b"78901")),
+                ])))
+                .unwrap()
+        }
+        let base_url = serve(|base| {
+            Router::new()
+                .route("/v25.0/media", get(metadata))
+                .route("/download", get(undeclared_too_large))
+                .with_state(base)
+        })
+        .await;
+        let client = WhatsAppClient::with_base_url(&client_config(true), base_url).unwrap();
+        let result = client.download_media("media", 10).await;
+        assert!(
+            matches!(
+                result,
+                Err(WhatsAppError::Api {
+                    status: StatusCode::PAYLOAD_TOO_LARGE,
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
     }
 }

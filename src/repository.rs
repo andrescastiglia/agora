@@ -60,8 +60,14 @@ pub async fn claim_webhook_event(db: &PgPool) -> Result<Option<ClaimedEvent>, sq
         WHERE id = (
             SELECT id
             FROM webhook_events
-            WHERE processing_status = 'pending'
-              AND next_attempt_at <= now()
+            WHERE attempts < 8
+              AND (
+                  (processing_status = 'pending' AND next_attempt_at <= now())
+                  OR (
+                      processing_status = 'processing'
+                      AND locked_at <= now() - interval '15 minutes'
+                  )
+              )
             ORDER BY received_at
             FOR UPDATE SKIP LOCKED
             LIMIT 1
@@ -232,8 +238,14 @@ pub async fn claim_job(db: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error> {
         WHERE id = (
             SELECT id
             FROM jobs
-            WHERE status = 'pending'
-              AND next_attempt_at <= now()
+            WHERE attempts < max_attempts
+              AND (
+                  (status = 'pending' AND next_attempt_at <= now())
+                  OR (
+                      status = 'processing'
+                      AND locked_at <= now() - interval '15 minutes'
+                  )
+              )
             ORDER BY created_at
             FOR UPDATE SKIP LOCKED
             LIMIT 1

@@ -93,6 +93,13 @@ impl Config {
                 message: "must be greater than zero".into(),
             });
         }
+        let openai_embedding_dimensions = parse("OPENAI_EMBEDDING_DIMENSIONS", "1536")?;
+        if openai_embedding_dimensions != 1536 {
+            return Err(ConfigError::Invalid {
+                name: "OPENAI_EMBEDDING_DIMENSIONS",
+                message: "must be 1536 to match the database vector column".into(),
+            });
+        }
 
         Ok(Self {
             database_url: Secret(required("DATABASE_URL")?),
@@ -116,7 +123,7 @@ impl Config {
                 .get("OPENAI_EMBEDDING_MODEL")
                 .cloned()
                 .unwrap_or_else(|| "text-embedding-3-small".into()),
-            openai_embedding_dimensions: parse("OPENAI_EMBEDDING_DIMENSIONS", "1536")?,
+            openai_embedding_dimensions,
             object_storage_endpoint: optional(&values, "OCI_OBJECT_STORAGE_ENDPOINT"),
             object_storage_region: optional(&values, "OCI_OBJECT_STORAGE_REGION"),
             object_storage_bucket: optional(&values, "OCI_OBJECT_STORAGE_BUCKET"),
@@ -252,5 +259,19 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn rejects_embedding_dimensions_that_do_not_match_the_schema() {
+        let mut values = minimum();
+        values.insert("OPENAI_EMBEDDING_DIMENSIONS".into(), "3072".into());
+
+        assert_eq!(
+            Config::from_map(values).unwrap_err(),
+            ConfigError::Invalid {
+                name: "OPENAI_EMBEDDING_DIMENSIONS",
+                message: "must be 1536 to match the database vector column".into(),
+            }
+        );
     }
 }

@@ -234,7 +234,6 @@ mod tests {
             ("DATABASE_URL".into(), "postgres://localhost/agora".into()),
             ("WHATSAPP_VERIFY_TOKEN".into(), "verify".into()),
             ("WHATSAPP_APP_SECRET".into(), "secret".into()),
-            ("OPENAI_EMBEDDING_DIMENSIONS".into(), "3".into()),
         ]);
         if with_key {
             values.insert("OPENAI_API_KEY".into(), "test-key".into());
@@ -275,13 +274,15 @@ mod tests {
             assert_eq!(headers.get("authorization").unwrap(), "Bearer test-key");
             assert_eq!(body["model"], "text-embedding-3-small");
             assert_eq!(body["input"], "hola");
-            assert_eq!(body["dimensions"], 3);
-            Json(json!({"data": [{"embedding": [0.1, 0.2, 0.3]}]}))
+            assert_eq!(body["dimensions"], 1536);
+            Json(json!({"data": [{"embedding": vec![0.1; 1536]}]}))
         }
         let base_url = serve(Router::new().route("/embeddings", post(handler))).await;
         let client = OpenAiClient::with_base_url(&config(true), base_url).unwrap();
 
-        assert_eq!(client.embedding("hola").await.unwrap(), [0.1, 0.2, 0.3]);
+        let embedding = client.embedding("hola").await.unwrap();
+        assert_eq!(embedding.len(), 1536);
+        assert!(embedding.iter().all(|value| *value == 0.1));
         assert_eq!(client.embedding_model(), "text-embedding-3-small");
     }
 
@@ -296,7 +297,7 @@ mod tests {
             client.embedding("hola").await,
             Err(OpenAiError::WrongDimensions {
                 actual: 1,
-                expected: 3
+                expected: 1536
             })
         ));
 
