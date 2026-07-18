@@ -93,8 +93,10 @@ porque no pertenecen a la versión 1.
 - [x] Recuperar App Secret y cargarlo sin exponerlo; se validó con un webhook
   firmado por Meta en producción.
 - [x] Agregar y verificar el número productivo en Cloud API (`CONNECTED`,
-  `code_verification_status=VERIFIED`; la revisión del nuevo nombre sigue en
-  curso y Groups API devuelve `131215` por falta de elegibilidad).
+  `code_verification_status=VERIFIED`; al 18/07/2026 el nombre vigente figura
+  `DECLINED`, el nuevo nombre sigue en `PENDING_REVIEW`, OBA está
+  `NOT_STARTED` y la creación real del grupo devuelve `131215` por falta de
+  elegibilidad).
 - [x] Crear system user y token permanente con permisos mínimos (`agora`,
   `SYSTEM_USER`, válido, `expires_at=0`, WABA y número accesibles).
 - [x] Inventariar WABA ID y Phone Number ID fuera de Git, en
@@ -105,12 +107,20 @@ porque no pertenecen a la versión 1.
   `group_participants_update`, `group_settings_update` y
   `group_status_update`.
 - [x] Configurar URLs de privacidad, términos y eliminación.
+- [x] Reemplazar en el perfil empresarial la URL raíz que devolvía `404` por
+  las páginas públicas existentes de privacidad y términos; la API confirmó
+  `success` y devolvió ambas URLs el 18/07/2026.
 - [x] Verificar challenge real y webhook firmado desde el panel de Meta; una
   segunda entrega idéntica fue deduplicada.
 - [ ] Probar mensaje entrante, documento, respuesta y estados.
 - [ ] Publicar la app después de elegibilidad OBA y revisión legal, pero antes
   del piloto real: Meta no entrega eventos productivos mientras está sin
   publicar.
+- [x] Iniciar App Review, documentar el uso real de
+  `whatsapp_business_messaging` y `whatsapp_business_management`, declarar
+  responsables/procesadores y retirar `public_profile` de la solicitud porque
+  Agora no lo usa. La entrega queda pendiente del screencast y las llamadas
+  reales que sólo pueden ejecutarse después de habilitar Groups API.
 
 ## 6. Secretos y consentimiento
 
@@ -121,12 +131,14 @@ porque no pertenecen a la versión 1.
 - [ ] Cargar Group ID y `ALLOWED_WHATSAPP_IDS` directamente en `oracle` cuando
   existan el grupo elegible y los consentimientos.
 - [x] Preparar un formulario versionado de consentimiento sin datos personales.
-- [ ] Documentar consentimiento de los seis participantes.
+- [x] Documentar consentimiento de los seis participantes fuera del proyecto
+  (confirmado por el responsable el 18/07/2026).
 - [x] Publicar política de privacidad propuesta.
 - [x] Publicar términos y procedimiento de exportación/eliminación.
-- [ ] Revisar y aprobar legalmente los textos propuestos, incluido que el RAG
+- [x] Revisar y aprobar legalmente los textos propuestos, incluido que el RAG
   cerrado y limitado de Agora no infringe las condiciones de Meta para
-  proveedores o asistentes de IA.
+  proveedores o asistentes de IA (revisión y evidencia conservadas fuera del
+  proyecto; confirmado por el responsable el 18/07/2026).
 
 ## 7. Prueba final
 
@@ -135,13 +147,17 @@ porque no pertenecen a la versión 1.
   panel de Meta ya demostró persistencia y deduplicación).
 - [ ] Documento real queda en PostgreSQL, se extrae y se indexa.
 - [ ] `@agora` responde dentro del grupo con citas.
-- [ ] Reiniciar el contenedor no pierde ni duplica jobs.
+- [x] Reiniciar el contenedor no pierde ni duplica jobs (prueba controlada en
+  producción el 18/07/2026: mismo UUID pendiente antes y después del reinicio,
+  una sola fila, `completed` en un intento, un fragmento generado y datos
+  sintéticos eliminados; `/ready` volvió a `200`).
 - [x] Un despliegue inválido vuelve al digest anterior (digest inexistente
   rechazado, rollback ejecutado y `/ready` continuó saludable).
 - [x] Un backup local se restaura en una base aislada.
 - [x] Merge de PR a `main` publica y despliega exactamente un digest (run
   `29634781853`; el índice público, `.deployed-image` y el contenedor coinciden).
-- [ ] Todos los participantes dieron consentimiento.
+- [x] Todos los participantes dieron consentimiento (evidencia conservada fuera
+  del proyecto; confirmado por el responsable el 18/07/2026).
 
 Agora estará completo cuando no quede ninguna casilla abierta y la evidencia
 externa confirme Meta, GitHub, `oracle`, OpenAI y el flujo real.

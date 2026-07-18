@@ -53,11 +53,23 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - El callback productivo está verificado, la app está vinculada a la WABA y
   `messages` más los cuatro eventos grupales están suscritos en `v25.0`.
 - La WABA está aprobada y el negocio verificado, pero el número todavía no es
-  elegible para Groups API: la API devuelve `131215` y la revisión del nombre
-  comercial continúa.
+  elegible para Groups API: al 18/07/2026 la API devuelve `131215`, OBA figura
+  `NOT_STARTED`, el nombre vigente está `DECLINED` y existe un nuevo nombre en
+  `PENDING_REVIEW`.
+- El perfil empresarial enlaza directamente a `/privacy` y `/terms`; se retiró
+  la URL raíz porque devuelve `404` y podía perjudicar la validación externa
+  del nombre comercial.
+- Meta exige para OBA que el número lleve al menos 30 días registrado, tenga
+  2FA, negocio verificado y nombre aprobado. WhatsApp Manager todavía informa
+  que la solicitud OBA no está disponible.
 - Meta no entrega webhooks productivos mientras la app permanece sin publicar.
   Por eso la publicación debe ocurrir después de la elegibilidad y la revisión
   legal, pero antes de ejecutar el piloto real.
+- App Review está iniciado con sólo `whatsapp_business_messaging` y
+  `whatsapp_business_management`; `public_profile` se retiró porque Agora no lo
+  utiliza. Las descripciones y el formulario de tratamiento de datos quedaron
+  preparados; faltan el screencast y las llamadas reales dependientes del
+  grupo.
 - Agora es un RAG de dominio limitado al conocimiento del grupo, no un asistente
   general abierto. La revisión legal previa al piloto debe confirmar que esta
   caracterización cumple las condiciones vigentes de Meta para servicios de IA.
@@ -104,6 +116,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - Contacto: `acastiglia@gmail.com`.
 - Operación y residencia de participantes: Argentina.
 - Todos los participantes deben consentir el tratamiento antes del piloto.
+- Los seis participantes dieron consentimiento antes del piloto; la evidencia
+  y la revisión legal se conservan fuera del proyecto.
 - Meta recibe mensajería y OpenAI recibe el contenido necesario para embeddings
   y respuestas.
 - Existen avisos públicos en `/privacy`, `/terms` y `/data-deletion`.
@@ -116,4 +130,3 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   token permanente ya están cargados fuera de Git.
 - Aprobación OBA/Groups API y resolución de la revisión del nombre. El negocio
   ya está verificado.
-- Consentimiento documentado de los seis participantes.
