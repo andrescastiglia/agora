@@ -64,8 +64,15 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   que la solicitud OBA no está disponible. Su registro de actividad comienza
   el 08/07/2026 y las solicitudes de verificación de nombre aparecen desde el
   09/07/2026; por prudencia, el siguiente intento de OBA debe hacerse desde el
-  08/08/2026. Business Support no muestra incidencias ni permite abrir un caso
-  por este activo, y Developer Support sólo ofrece autoservicio para WhatsApp.
+  08/08/2026.
+- La 2FA obligatoria para los usuarios del Business Portfolio no equivale a la
+  verificación en dos pasos del número. Esta última sigue desactivada y Meta
+  devolvió `Unknown error` al intentar establecer y confirmar un PIN nuevo. Se
+  abrió Direct Support `27824698277217409`; el PIN temporal se eliminó al
+  fallar la activación y no se guardó en Git ni producción.
+- La revisión del nombre está escalada por Direct Support
+  `28334978916099204`: el nombre figura simultáneamente rechazado y con una
+  revisión pendiente, lo que impide presentar `Agora by Andres Castiglia`.
 - Meta no entrega webhooks productivos mientras la app permanece sin publicar.
   Por eso la publicación debe ocurrir después de la elegibilidad y la revisión
   legal, pero antes de ejecutar el piloto real.
@@ -132,5 +139,6 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 
 - Group ID y allowlist de participantes. WABA ID, Phone Number ID, App Secret y
   token permanente ya están cargados fuera de Git.
-- Aprobación OBA/Groups API y resolución de la revisión del nombre. El negocio
-  ya está verificado.
+- Aprobación OBA/Groups API, activación de la verificación en dos pasos del
+  número y resolución de la revisión del nombre. El negocio ya está verificado;
+  ambos problemas del número están escalados en Direct Support.
