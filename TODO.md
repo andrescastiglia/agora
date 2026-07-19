@@ -93,14 +93,16 @@ porque no pertenecen a la versión 1.
   de WhatsApp Manager comienza el 08/07/2026 y Meta exige al menos 30 días de
   registro; reintentar desde el 08/08/2026, sujeto también a que apruebe el
   nombre. Direct Support tramita la revisión del nombre en el caso
-  `28334978916099204`.
+  `28334978916099204`, transferido al Integrity Team; incluso después de
+  activar la verificación en dos pasos, Meta sigue informando que la solicitud
+  OBA no está disponible.
 - [x] Completar verificación del negocio y requisito de 2FA para sus usuarios
   (Business Portfolio y Tech Provider verificados; 2FA requerida para todos).
-- [ ] Activar la verificación en dos pasos específica del número. WhatsApp
-  Manager confirma que está desactivada; dos intentos de alta con un PIN nuevo
-  y confirmado devolvieron `Unknown error` el 18/07/2026. Direct Support está
-  investigando el caso `27824698277217409`; el PIN temporal no se conservó
-  porque la activación falló.
+- [x] Activar la verificación en dos pasos específica del número. Dos intentos
+  desde WhatsApp Manager devolvieron `Unknown error`; Direct Support
+  `27824698277217409` indicó el endpoint oficial y cerró el caso. La API
+  confirmó `success:true`, WhatsApp Manager muestra `Enabled` y el PIN quedó
+  sólo en `/etc/agora/agora.env` (`640`, `root:deploy`) el 18/07/2026.
 - [x] Recuperar App Secret y cargarlo sin exponerlo; se validó con un webhook
   firmado por Meta en producción.
 - [x] Agregar y verificar el número productivo en Cloud API (`CONNECTED`,
