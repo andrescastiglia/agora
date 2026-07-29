@@ -1,6 +1,6 @@
 # TODO — Puesta en producción de Agora
 
-Última auditoría: 18 de julio de 2026.
+Última auditoría: 29 de julio de 2026.
 
 Esta lista refleja el alcance acordado en `decisiones.md`. Las referencias a una
 interfaz web, chat 1:1, audio, OCR o importación histórica fueron eliminadas
@@ -75,8 +75,9 @@ porque no pertenecen a la versión 1.
 - [x] Crear `/etc/agora/agora.env` con permisos restringidos.
 - [x] Instalar virtual host y certificado TLS de `agora.maese.com.ar`.
 - [x] Desplegar una imagen GHCR inmutable y verificar `/health` y `/ready`
-  (último run `29662623493`, digest
-  `sha256:bd61017f3ac57cc95fc2f98ec895ecd53c95d915cdd3c2499dd5f9528a247a9d`).
+  (último run `29668526663`, digest
+  `sha256:a5c411136c9a39652a7befd5259973822763aa9f26cd8bdf35f9fb7111eb6140`;
+  contenedor saludable y sin reinicios al 29/07/2026).
 - [x] Implementar backup local cifrado de PostgreSQL y probar restauración.
 - [x] Confirmar que sólo Nginx `80/443` publica Agora; API y PostgreSQL quedan en
   loopback.
@@ -89,33 +90,35 @@ porque no pertenecen a la versión 1.
 - [x] Verificar requisitos oficiales de Groups API al 17/07/2026.
 - [x] Confirmar límite de participantes compatible.
 - [x] Confirmar que Groups API no vincula una Community existente.
-- [ ] Obtener elegibilidad Official Business Account. El registro de actividad
-  de WhatsApp Manager comienza el 08/07/2026 y Meta exige al menos 30 días de
-  registro; reintentar desde el 08/08/2026, sujeto también a que apruebe el
-  nombre. Direct Support tramita la revisión del nombre en el caso
-  `28334978916099204`, transferido al Integrity Team; incluso después de
-  activar la verificación en dos pasos, Meta sigue informando que la solicitud
-  OBA no está disponible.
+- [ ] Obtener elegibilidad Official Business Account. La WABA `Agora` tiene
+  actividad desde febrero de 2026 y cumple los requisitos documentados: negocio
+  verificado, nombre `Approved` y verificación en dos pasos activa. Sin embargo,
+  `official_business_account.oba_status` devuelve `NOT_STARTED` y el botón
+  `Submit request` continúa deshabilitado. Direct Support cerró el caso
+  `28216915367901535`: OBA sólo está disponible por autoservicio cuando Meta
+  habilita el botón o mediante un BSP con Meta Point of Contact; actualmente no
+  la ofrece a las demás cuentas. El caso anterior de revisión del nombre
+  `28334978916099204` figura `Resolved`.
 - [x] Completar verificación del negocio y requisito de 2FA para sus usuarios
   (Business Portfolio y Tech Provider verificados; 2FA requerida para todos).
-- [x] Activar la verificación en dos pasos específica del número. Dos intentos
-  desde WhatsApp Manager devolvieron `Unknown error`; Direct Support
-  `27824698277217409` indicó el endpoint oficial y cerró el caso. La API
-  confirmó `success:true`, WhatsApp Manager muestra `Enabled` y el PIN quedó
-  sólo en `/etc/agora/agora.env` (`640`, `root:deploy`) el 18/07/2026.
+- [x] Activar la verificación en dos pasos específica del número. Graph API
+  confirmó el registro del número de `Agora` con `success:true` y WhatsApp
+  Manager muestra `Enabled` el 29/07/2026. El PIN continúa sólo en
+  `/etc/agora/agora.env` (`640`, `root:deploy`).
 - [x] Recuperar App Secret y cargarlo sin exponerlo; se validó con un webhook
   firmado por Meta en producción.
-- [x] Agregar y verificar el número productivo en Cloud API (`CONNECTED`,
-  `code_verification_status=VERIFIED`; al 18/07/2026 el nombre vigente figura
-  `DECLINED`, el nuevo nombre sigue en `PENDING_REVIEW`, OBA está
-  `NOT_STARTED` y la creación real del grupo devuelve `131215` por falta de
-  elegibilidad). La revisión del nombre queda escalada en Direct Support,
-  caso `28334978916099204`.
-- [x] Crear system user y token permanente con permisos mínimos (`agora`,
-  `SYSTEM_USER`, válido, `expires_at=0`, WABA y número accesibles).
+- [x] Registrar el número productivo de la WABA `Agora` en Cloud API. Graph API
+  devuelve `code_verification_status=VERIFIED`, `name_status=APPROVED`,
+  `platform_type=CLOUD_API` y throughput `STANDARD`; WhatsApp Manager muestra
+  `Connected` el 29/07/2026.
+- [x] Confirmar el acceso del system user y su token permanente a la WABA
+  `Agora` y su número. El token sigue válido, `/me` responde y permitió
+  registrar el número y suscribir la app el 29/07/2026.
 - [x] Inventariar WABA ID y Phone Number ID fuera de Git, en
   `/etc/agora/agora.env`.
 - [ ] Crear el grupo oficial por Groups API e invitar a los seis participantes.
+  El intento real contra el número de `Agora` el 29/07/2026 devuelve `131215`
+  porque el número todavía no es elegible para Groups API.
 - [x] Configurar callback `https://agora.maese.com.ar/webhooks/whatsapp`.
 - [x] Suscribir `messages`, `group_lifecycle_update`,
   `group_participants_update`, `group_settings_update` y

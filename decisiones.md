@@ -1,6 +1,6 @@
 # Decisiones de Agora
 
-Última actualización: 18 de julio de 2026.
+Última actualización: 29 de julio de 2026.
 
 Este documento es autoritativo para la versión 1 y prevalece sobre propuestas
 anteriores del roadmap.
@@ -47,35 +47,38 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   secretos productivos ni el reingreso de contraseña que Meta pueda exigir.
 - App ID, Business ID, WABA ID y Phone Number ID pueden inventariarse como
   configuración. App Secret, tokens y PIN nunca se envían por chat ni Git.
-- El system user `agora` tiene un token permanente válido (`expires_at=0`) con
-  acceso a la WABA y al número; App Secret, token e IDs productivos están
-  cargados en `/etc/agora/agora.env`.
+- El token permanente cargado en `/etc/agora/agora.env` sigue siendo válido,
+  su sujeto está inventariado en `META_SYSTEM_USER_ID` y tiene acceso a la WABA
+  productiva `Agora` y su número. `Rent` es otro proyecto y queda fuera del
+  alcance de Agora.
 - El callback productivo está verificado, la app está vinculada a la WABA y
   `messages` más los cuatro eventos grupales están suscritos en `v25.0`.
-- La WABA está aprobada y el negocio verificado, pero el número todavía no es
-  elegible para Groups API: al 18/07/2026 la API devuelve `131215`, OBA figura
-  `NOT_STARTED`, el nombre vigente está `DECLINED` y existe un nuevo nombre en
-  `PENDING_REVIEW`.
+- La WABA y el negocio están aprobados. El 29/07/2026 el número de `Agora`
+  quedó registrado en Cloud API: el nombre figura `Approved`, WhatsApp Manager
+  muestra `Connected` y Graph API informa throughput `STANDARD`. El intento
+  real de crear el grupo devuelve `131215` porque el número todavía no es
+  elegible para Groups API.
 - El perfil empresarial enlaza directamente a `/privacy` y `/terms`; se retiró
   la URL raíz porque devuelve `404` y podía perjudicar la validación externa
   del nombre comercial.
-- Meta exige para OBA que el número lleve al menos 30 días registrado, tenga
-  2FA, negocio verificado y nombre aprobado. WhatsApp Manager todavía informa
-  que la solicitud OBA no está disponible. Su registro de actividad comienza
-  el 08/07/2026 y las solicitudes de verificación de nombre aparecen desde el
-  09/07/2026; por prudencia, el siguiente intento de OBA debe hacerse desde el
-  08/08/2026.
+- Meta exige para OBA que el negocio lleve al menos 30 días registrado en
+  WhatsApp Business Platform, tenga negocio verificado, nombre aprobado y
+  verificación en dos pasos en el número. La WABA `Agora` tiene actividad desde
+  febrero de 2026 y cumple esos requisitos, pero WhatsApp Manager todavía no
+  habilita la solicitud y Graph API informa `oba_status=NOT_STARTED`. Direct
+  Support cerró el caso `28216915367901535` el 29/07/2026 indicando que OBA sólo
+  está disponible por autoservicio cuando Meta habilita el botón o mediante un
+  BSP con Meta Point of Contact, y que actualmente no la ofrece a las demás
+  cuentas.
 - La 2FA obligatoria para los usuarios del Business Portfolio no equivale a la
-  verificación en dos pasos del número. WhatsApp Manager devolvió
-  `Unknown error` al intentar establecer el PIN, pero Direct Support
-  `27824698277217409` indicó el endpoint oficial. La API confirmó
-  `success:true`, el panel muestra `Enabled` y el PIN definitivo se conserva
-  únicamente en `/etc/agora/agora.env` con permisos `640 root:deploy`.
-- La revisión del nombre está escalada por Direct Support
-  `28334978916099204`: el nombre figura simultáneamente rechazado y con una
-  revisión pendiente, lo que impide presentar `Agora by Andres Castiglia`. Meta
-  transfirió el caso al Integrity Team y pidió esperar su respuesta sin realizar
-  otra acción.
+  verificación en dos pasos del número. Graph API confirmó el registro con el
+  PIN y WhatsApp Manager muestra `Enabled` para el número de `Agora` el
+  29/07/2026. El PIN definitivo se conserva únicamente en
+  `/etc/agora/agora.env` con permisos `640 root:deploy`.
+- La revisión del nombre de Direct Support `28334978916099204` figura
+  `Resolved` y WhatsApp Manager muestra el nombre `Approved` al 29/07/2026.
+  La solicitud OBA sigue deshabilitada y el panel pide volver a intentar más
+  adelante.
 - Meta no entrega webhooks productivos mientras la app permanece sin publicar.
   Por eso la publicación debe ocurrir después de la elegibilidad y la revisión
   legal, pero antes de ejecutar el piloto real.
