@@ -3,17 +3,19 @@ use serde_json::Value;
 use sqlx::{PgPool, types::Json};
 use uuid::Uuid;
 
-use crate::whatsapp::{IncomingGroupMessage, IncomingStatus};
+use crate::chat::{ChatProvider, IncomingDocument, IncomingMessage, IncomingStatus};
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct ClaimedEvent {
     pub id: Uuid,
+    pub provider: String,
     pub payload: Value,
 }
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct ClaimedJob {
     pub id: Uuid,
+    pub provider: String,
     pub job_type: String,
     pub payload: Value,
 }
@@ -22,7 +24,7 @@ pub struct ClaimedJob {
 pub struct SearchHit {
     pub chunk_id: Uuid,
     pub message_id: Uuid,
-    pub whatsapp_message_id: String,
+    pub external_message_id: String,
     pub sender_name: Option<String>,
     pub source_timestamp: Option<DateTime<Utc>>,
     pub content: String,
@@ -31,16 +33,20 @@ pub struct SearchHit {
 
 pub async fn persist_webhook_event(
     db: &PgPool,
+    provider: ChatProvider,
+    provider_event_id: &str,
     payload: &Value,
     content_sha256: &str,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        INSERT INTO webhook_events (provider, payload, content_sha256)
-        VALUES ('whatsapp', $1, $2)
-        ON CONFLICT (content_sha256) DO NOTHING
+        INSERT INTO webhook_events (provider, provider_event_id, payload, content_sha256)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (provider, provider_event_id) DO NOTHING
         "#,
     )
+    .bind(provider.as_str())
+    .bind(provider_event_id)
     .bind(payload)
     .bind(content_sha256)
     .execute(db)
@@ -49,7 +55,10 @@ pub async fn persist_webhook_event(
     Ok(result.rows_affected() == 1)
 }
 
-pub async fn claim_webhook_event(db: &PgPool) -> Result<Option<ClaimedEvent>, sqlx::Error> {
+pub async fn claim_webhook_event(
+    db: &PgPool,
+    provider: ChatProvider,
+) -> Result<Option<ClaimedEvent>, sqlx::Error> {
     sqlx::query_as(
         r#"
         WITH dead_lettered AS (
@@ -61,6 +70,7 @@ pub async fn claim_webhook_event(db: &PgPool) -> Result<Option<ClaimedEvent>, sq
                     'worker stopped during the final processing attempt'
                 )
             WHERE processing_status = 'processing'
+              AND provider = $1
               AND locked_at <= now() - interval '15 minutes'
               AND attempts >= 8
         )
@@ -72,7 +82,8 @@ pub async fn claim_webhook_event(db: &PgPool) -> Result<Option<ClaimedEvent>, sq
         WHERE id = (
             SELECT id
             FROM webhook_events
-            WHERE attempts < 8
+            WHERE provider = $1
+              AND attempts < 8
               AND (
                   (processing_status = 'pending' AND next_attempt_at <= now())
                   OR (
@@ -84,9 +95,10 @@ pub async fn claim_webhook_event(db: &PgPool) -> Result<Option<ClaimedEvent>, sq
             FOR UPDATE SKIP LOCKED
             LIMIT 1
         )
-        RETURNING id, payload
+        RETURNING id, provider, payload
         "#,
     )
+    .bind(provider.as_str())
     .fetch_optional(db)
     .await
 }
@@ -125,26 +137,16 @@ pub async fn fail_webhook_event(db: &PgPool, id: Uuid, error: &str) -> Result<()
     Ok(())
 }
 
-pub async fn persist_group_message(
+pub async fn persist_message(
     db: &PgPool,
-    message: &IncomingGroupMessage,
+    message: &IncomingMessage,
 ) -> Result<(Uuid, bool), sqlx::Error> {
-    let source_timestamp = message
-        .timestamp
-        .parse::<i64>()
-        .ok()
-        .and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0));
-    let raw_text = message.text.as_deref().or_else(|| {
-        message
-            .document
-            .as_ref()
-            .and_then(|document| document.caption.as_deref())
-    });
-    let metadata = serde_json::json!({
-        "waba_id": message.waba_id,
-        "phone_number_id": message.phone_number_id,
-        "reply_to_message_id": message.reply_to_message_id,
-    });
+    let raw_text = message.effective_text();
+    let mut metadata = message.metadata.clone();
+    metadata["reply_to_message_id"] = message
+        .reply_to_message_id
+        .as_ref()
+        .map_or(Value::Null, |value| Value::String(value.clone()));
 
     let row: (Uuid, bool) = sqlx::query_as(
         r#"
@@ -152,6 +154,10 @@ pub async fn persist_group_message(
             INSERT INTO messages (
                 whatsapp_message_id,
                 group_id,
+                provider,
+                external_message_id,
+                conversation_id,
+                space_id,
                 sender_id,
                 sender_name,
                 message_type,
@@ -160,25 +166,32 @@ pub async fn persist_group_message(
                 source_timestamp,
                 metadata
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8)
-            ON CONFLICT (whatsapp_message_id) DO NOTHING
+            VALUES (
+                CASE WHEN $1 = 'whatsapp' THEN $2 ELSE NULL END,
+                $3, $1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10
+            )
+            ON CONFLICT (provider, conversation_id, external_message_id) DO NOTHING
             RETURNING id
         )
         SELECT id, true FROM inserted
         UNION ALL
         SELECT id, false FROM messages
-        WHERE whatsapp_message_id = $1
+        WHERE provider = $1
+          AND conversation_id = $3
+          AND external_message_id = $2
           AND NOT EXISTS (SELECT 1 FROM inserted)
         LIMIT 1
         "#,
     )
-    .bind(&message.message_id)
-    .bind(&message.group_id)
+    .bind(message.provider.as_str())
+    .bind(&message.external_message_id)
+    .bind(&message.conversation_id)
+    .bind(&message.space_id)
     .bind(&message.sender_id)
     .bind(&message.sender_name)
     .bind(&message.kind)
     .bind(raw_text)
-    .bind(source_timestamp)
+    .bind(message.timestamp)
     .bind(Json(metadata))
     .fetch_one(db)
     .await?;
@@ -188,16 +201,17 @@ pub async fn persist_group_message(
 
 pub async fn persist_document(
     db: &PgPool,
+    provider: ChatProvider,
     message_id: Uuid,
-    document: &crate::whatsapp::Document,
+    document: &IncomingDocument,
 ) -> Result<Uuid, sqlx::Error> {
     let row: (Uuid,) = sqlx::query_as(
         r#"
         INSERT INTO attachments (
-            message_id, provider_media_id, filename, mime_type, provider_sha256, caption
+            provider, message_id, provider_media_id, filename, mime_type, provider_sha256, caption
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (provider_media_id) DO UPDATE
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (provider, message_id, provider_media_id) DO UPDATE
         SET filename = EXCLUDED.filename,
             mime_type = EXCLUDED.mime_type,
             provider_sha256 = EXCLUDED.provider_sha256,
@@ -205,8 +219,9 @@ pub async fn persist_document(
         RETURNING id
         "#,
     )
+    .bind(provider.as_str())
     .bind(message_id)
-    .bind(&document.media_id)
+    .bind(&document.provider_media_id)
     .bind(&document.filename)
     .bind(&document.mime_type)
     .bind(&document.sha256)
@@ -219,17 +234,19 @@ pub async fn persist_document(
 
 pub async fn enqueue_job(
     db: &PgPool,
+    provider: ChatProvider,
     job_type: &str,
     dedupe_key: &str,
     payload: Value,
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        INSERT INTO jobs (job_type, dedupe_key, payload)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (job_type, dedupe_key) DO NOTHING
+        INSERT INTO jobs (provider, job_type, dedupe_key, payload)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (provider, job_type, dedupe_key) DO NOTHING
         "#,
     )
+    .bind(provider.as_str())
     .bind(job_type)
     .bind(dedupe_key)
     .bind(Json(payload))
@@ -239,7 +256,10 @@ pub async fn enqueue_job(
     Ok(result.rows_affected() == 1)
 }
 
-pub async fn claim_job(db: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error> {
+pub async fn claim_job(
+    db: &PgPool,
+    provider: ChatProvider,
+) -> Result<Option<ClaimedJob>, sqlx::Error> {
     sqlx::query_as(
         r#"
         WITH dead_lettered AS (
@@ -251,6 +271,7 @@ pub async fn claim_job(db: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error> {
                     'worker stopped during the final processing attempt'
                 )
             WHERE status = 'processing'
+              AND provider = $1
               AND locked_at <= now() - interval '15 minutes'
               AND attempts >= max_attempts
         )
@@ -262,7 +283,8 @@ pub async fn claim_job(db: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error> {
         WHERE id = (
             SELECT id
             FROM jobs
-            WHERE attempts < max_attempts
+            WHERE provider = $1
+              AND attempts < max_attempts
               AND (
                   (status = 'pending' AND next_attempt_at <= now())
                   OR (
@@ -274,9 +296,10 @@ pub async fn claim_job(db: &PgPool) -> Result<Option<ClaimedJob>, sqlx::Error> {
             FOR UPDATE SKIP LOCKED
             LIMIT 1
         )
-        RETURNING id, job_type, payload
+        RETURNING id, provider, job_type, payload
         "#,
     )
+    .bind(provider.as_str())
     .fetch_optional(db)
     .await
 }
@@ -323,6 +346,7 @@ pub async fn message_text(db: &PgPool, id: Uuid) -> Result<Option<String>, sqlx:
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct AttachmentDetails {
+    pub provider: String,
     pub message_id: Uuid,
     pub provider_media_id: String,
     pub filename: Option<String>,
@@ -335,7 +359,7 @@ pub async fn attachment_details(
 ) -> Result<Option<AttachmentDetails>, sqlx::Error> {
     sqlx::query_as(
         r#"
-        SELECT message_id, provider_media_id, filename, original_data
+        SELECT provider, message_id, provider_media_id, filename, original_data
         FROM attachments
         WHERE id = $1
         "#,
@@ -401,12 +425,14 @@ pub async fn replace_chunks(
         .execute(&mut *transaction)
         .await?;
     for (index, (content, embedding)) in chunks.iter().enumerate() {
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO document_chunks (
-                message_id, chunk_index, content, embedding, embedding_model
+                message_id, group_id, space_id, chunk_index, content, embedding, embedding_model
             )
-            VALUES ($1, $2, $3, $4, $5)
+            SELECT $1, m.conversation_id, m.space_id, $2, $3, $4, $5
+            FROM messages m
+            WHERE m.id = $1
             "#,
         )
         .bind(message_id)
@@ -416,67 +442,102 @@ pub async fn replace_chunks(
         .bind(embedding_model)
         .execute(&mut *transaction)
         .await?;
+        if result.rows_affected() != 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
     }
     transaction.commit().await?;
     Ok(())
 }
 
-pub async fn search_group(
+pub async fn search_space(
     db: &PgPool,
-    group_id: &str,
+    space_id: &str,
     query: &str,
     embedding: Vec<f32>,
     exclude_message_id: Uuid,
     limit: i64,
 ) -> Result<Vec<SearchHit>, sqlx::Error> {
+    let candidate_limit = limit.saturating_mul(5).max(1);
     sqlx::query_as(
         r#"
+        WITH search_query AS MATERIALIZED (
+            SELECT websearch_to_tsquery('spanish', $2) AS value
+        ),
+        vector_candidates AS MATERIALIZED (
+            SELECT dc.id
+            FROM document_chunks dc
+            WHERE dc.space_id = $1
+              AND dc.embedding IS NOT NULL
+              AND dc.message_id <> $4
+            ORDER BY dc.embedding <=> $3
+            LIMIT $6
+        ),
+        text_candidates AS MATERIALIZED (
+            SELECT dc.id
+            FROM document_chunks dc
+            CROSS JOIN search_query sq
+            WHERE dc.space_id = $1
+              AND dc.embedding IS NOT NULL
+              AND dc.message_id <> $4
+              AND dc.content_tsv @@ sq.value
+            ORDER BY ts_rank_cd(dc.content_tsv, sq.value) DESC
+            LIMIT $6
+        ),
+        candidates AS (
+            SELECT id FROM vector_candidates
+            UNION
+            SELECT id FROM text_candidates
+        )
         SELECT
             dc.id AS chunk_id,
             dc.message_id,
-            m.whatsapp_message_id,
+            m.external_message_id,
             m.sender_name,
             m.source_timestamp,
             dc.content,
             (
                 0.75 * (1 - (dc.embedding <=> $3))
-                + 0.25 * ts_rank_cd(dc.content_tsv, websearch_to_tsquery('spanish', $2))
+                + 0.25 * ts_rank_cd(dc.content_tsv, sq.value)
             )::float8 AS score
-        FROM document_chunks dc
+        FROM candidates c
+        JOIN document_chunks dc ON dc.id = c.id
         JOIN messages m ON m.id = dc.message_id
-        WHERE m.group_id = $1
-          AND dc.embedding IS NOT NULL
-          AND m.id <> $4
+        CROSS JOIN search_query sq
         ORDER BY score DESC
         LIMIT $5
         "#,
     )
-    .bind(group_id)
+    .bind(space_id)
     .bind(query)
     .bind(pgvector::Vector::from(embedding))
     .bind(exclude_message_id)
     .bind(limit)
+    .bind(candidate_limit)
     .fetch_all(db)
     .await
 }
 
 pub async fn create_outgoing_message(
     db: &PgPool,
+    provider: ChatProvider,
     source_message_id: Uuid,
-    group_id: &str,
+    conversation_id: &str,
     body: &str,
 ) -> Result<(Uuid, String, Option<String>), sqlx::Error> {
     sqlx::query_as(
         r#"
-        INSERT INTO outgoing_messages (source_message_id, group_id, body)
-        VALUES ($1, $2, $3)
+        INSERT INTO outgoing_messages (provider, source_message_id, group_id, body)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (source_message_id) WHERE source_message_id IS NOT NULL
         DO UPDATE SET body = EXCLUDED.body
+        WHERE outgoing_messages.provider = EXCLUDED.provider
         RETURNING id, status, provider_message_id
         "#,
     )
+    .bind(provider.as_str())
     .bind(source_message_id)
-    .bind(group_id)
+    .bind(conversation_id)
     .bind(body)
     .fetch_one(db)
     .await
@@ -505,11 +566,6 @@ pub async fn apply_outgoing_status(
     db: &PgPool,
     status: &IncomingStatus,
 ) -> Result<bool, sqlx::Error> {
-    let provider_timestamp = status
-        .timestamp
-        .parse::<i64>()
-        .ok()
-        .and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0));
     let error = status
         .error
         .as_ref()
@@ -517,21 +573,23 @@ pub async fn apply_outgoing_status(
     let result = sqlx::query(
         r#"
         UPDATE outgoing_messages
-        SET status = $2,
-            last_error = $3,
-            provider_status_at = COALESCE($4, provider_status_at)
-        WHERE provider_message_id = $1
+        SET status = $3,
+            last_error = $4,
+            provider_status_at = COALESCE($5, provider_status_at)
+        WHERE provider = $1
+          AND provider_message_id = $2
           AND (
               provider_status_at IS NULL
-              OR $4 IS NULL
-              OR provider_status_at <= $4
+              OR $5 IS NULL
+              OR provider_status_at <= $5
           )
         "#,
     )
+    .bind(status.provider.as_str())
     .bind(&status.provider_message_id)
     .bind(&status.status)
     .bind(error)
-    .bind(provider_timestamp)
+    .bind(status.timestamp)
     .execute(db)
     .await?;
     Ok(result.rows_affected() == 1)

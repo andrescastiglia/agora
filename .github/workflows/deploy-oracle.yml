@@ -171,6 +171,7 @@ jobs:
       - name: Upload deployment manifests
         run: |
           scp -P "$ORACLE_PORT" compose.production.yml scripts/deploy-oracle.sh \
+            scripts/configure-telegram-webhook.sh \
             "$ORACLE_USER@$ORACLE_HOST:$ORACLE_DEPLOY_PATH/"
       - name: Authenticate oracle to GHCR for this deployment
         env:
@@ -182,7 +183,8 @@ jobs:
       - name: Deploy exact image digest with automatic rollback
         run: |
           ssh -p "$ORACLE_PORT" "$ORACLE_USER@$ORACLE_HOST" \
-            "chmod 0750 '$ORACLE_DEPLOY_PATH/deploy-oracle.sh' && \
+            "chmod 0750 '$ORACLE_DEPLOY_PATH/deploy-oracle.sh' \
+              '$ORACLE_DEPLOY_PATH/configure-telegram-webhook.sh' && \
              ORACLE_DEPLOY_PATH='$ORACLE_DEPLOY_PATH' \
              '$ORACLE_DEPLOY_PATH/deploy-oracle.sh' '$IMAGE'"
       - name: Verify public readiness

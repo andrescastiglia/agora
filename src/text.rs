@@ -47,7 +47,7 @@ pub fn source_context(sources: &[crate::repository::SearchHit]) -> String {
             format!(
                 "[{}] mensaje={} fecha={} autor={}\n{}",
                 index + 1,
-                source.whatsapp_message_id,
+                source.external_message_id,
                 source
                     .source_timestamp
                     .map(|date| date.to_rfc3339())
@@ -97,7 +97,7 @@ mod tests {
         let source = crate::repository::SearchHit {
             chunk_id: Uuid::new_v4(),
             message_id: Uuid::new_v4(),
-            whatsapp_message_id: "wamid.1".into(),
+            external_message_id: "wamid.1".into(),
             sender_name: Some("Ana".into()),
             source_timestamp: Some(Utc.timestamp_opt(1_700_000_000, 0).unwrap()),
             content: "La reunión es el viernes.".into(),

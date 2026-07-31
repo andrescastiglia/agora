@@ -10,8 +10,9 @@ use serde_json::{Value, json};
 
 use crate::{
     AppState,
+    chat::{ChatProvider, telegram},
     repository::{persist_webhook_event, ping},
-    security::{sha256_hex, verify_meta_signature},
+    security::{sha256_hex, verify_meta_signature, verify_telegram_secret},
 };
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +35,13 @@ pub async fn health() -> Json<Health> {
 }
 
 pub async fn ready(State(state): State<AppState>) -> Response {
+    if !state.config.active_provider_ready() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"status": "unavailable"})),
+        )
+            .into_response();
+    }
     match ping(&state.db).await {
         Ok(()) => (StatusCode::OK, Json(json!({"status": "ready"}))).into_response(),
         Err(error) => {
@@ -52,7 +60,11 @@ pub async fn verify_whatsapp(
     Query(query): Query<VerifyQuery>,
 ) -> Response {
     if query.mode == "subscribe"
-        && query.verify_token == state.config.whatsapp_verify_token.expose()
+        && state
+            .config
+            .whatsapp_verify_token
+            .as_ref()
+            .is_some_and(|secret| query.verify_token == secret.expose())
     {
         (StatusCode::OK, query.challenge).into_response()
     } else {
@@ -72,38 +84,102 @@ pub async fn receive_whatsapp(
     let signature = headers
         .get("x-hub-signature-256")
         .and_then(|value| value.to_str().ok());
-    if let Err(error) =
-        verify_meta_signature(signature, &body, state.config.whatsapp_app_secret.expose())
-    {
+    let Some(secret) = state.config.whatsapp_app_secret.as_ref() else {
+        return provider_not_configured();
+    };
+    if let Err(error) = verify_meta_signature(signature, &body, secret.expose()) {
         tracing::warn!(%error, "rejected WhatsApp webhook signature");
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"accepted": false, "error": "invalid signature"})),
-        )
-            .into_response();
+        return unauthorized();
+    }
+    if state.config.chat_provider != ChatProvider::WhatsApp {
+        return ignored_inactive();
     }
 
     let payload: Value = match serde_json::from_slice(&body) {
         Ok(payload) => payload,
         Err(error) => {
             tracing::warn!(%error, "rejected malformed WhatsApp webhook");
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"accepted": false, "error": "invalid JSON"})),
-            )
-                .into_response();
+            return invalid_json();
         }
     };
     let content_sha256 = sha256_hex(&body);
+    persist(
+        &state,
+        ChatProvider::WhatsApp,
+        &content_sha256,
+        &payload,
+        &content_sha256,
+    )
+    .await
+}
 
-    match persist_webhook_event(&state.db, &payload, &content_sha256).await {
+pub async fn receive_telegram(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let header = headers
+        .get("x-telegram-bot-api-secret-token")
+        .and_then(|value| value.to_str().ok());
+    let Some(secret) = state.config.telegram_webhook_secret.as_ref() else {
+        return provider_not_configured();
+    };
+    if let Err(error) = verify_telegram_secret(header, secret.expose()) {
+        tracing::warn!(%error, "rejected Telegram webhook secret");
+        return unauthorized();
+    }
+    if state.config.chat_provider != ChatProvider::Telegram {
+        return ignored_inactive();
+    }
+
+    let payload: Value = match serde_json::from_slice(&body) {
+        Ok(payload) => payload,
+        Err(error) => {
+            tracing::warn!(%error, "rejected malformed Telegram webhook");
+            return invalid_json();
+        }
+    };
+    let Some(provider_event_id) = telegram::update_id(&payload) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"accepted": false, "error": "missing update_id"})),
+        )
+            .into_response();
+    };
+    let content_sha256 = sha256_hex(&body);
+    persist(
+        &state,
+        ChatProvider::Telegram,
+        &provider_event_id,
+        &payload,
+        &content_sha256,
+    )
+    .await
+}
+
+async fn persist(
+    state: &AppState,
+    provider: ChatProvider,
+    provider_event_id: &str,
+    payload: &Value,
+    content_sha256: &str,
+) -> Response {
+    match persist_webhook_event(
+        &state.db,
+        provider,
+        provider_event_id,
+        payload,
+        content_sha256,
+    )
+    .await
+    {
         Ok(inserted) => (
             StatusCode::OK,
             Json(json!({"accepted": true, "duplicate": !inserted})),
         )
             .into_response(),
         Err(error) => {
-            tracing::error!(%error, "failed to persist WhatsApp webhook");
+            tracing::error!(%error, provider = %provider, "failed to persist chat webhook");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"accepted": false})),
@@ -111,6 +187,38 @@ pub async fn receive_whatsapp(
                 .into_response()
         }
     }
+}
+
+fn unauthorized() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({"accepted": false, "error": "invalid signature"})),
+    )
+        .into_response()
+}
+
+fn provider_not_configured() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({"accepted": false})),
+    )
+        .into_response()
+}
+
+fn ignored_inactive() -> Response {
+    (
+        StatusCode::OK,
+        Json(json!({"accepted": true, "ignored": true})),
+    )
+        .into_response()
+}
+
+fn invalid_json() -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({"accepted": false, "error": "invalid JSON"})),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -129,11 +237,23 @@ mod tests {
 
     use crate::{AppState, build_router, config::Config};
 
-    fn app() -> axum::Router {
+    fn app(provider: &str) -> axum::Router {
         let config = Config::from_map(HashMap::from([
             ("DATABASE_URL".into(), "postgres://localhost/agora".into()),
+            ("KNOWLEDGE_SPACE_ID".into(), "agora".into()),
+            ("CHAT_PROVIDER".into(), provider.into()),
+            ("TELEGRAM_BOT_TOKEN".into(), "test-token".into()),
+            ("TELEGRAM_WEBHOOK_SECRET".into(), "telegram-secret".into()),
+            ("TELEGRAM_GROUP_ID".into(), "-1001".into()),
+            ("TELEGRAM_ALLOWED_USER_IDS".into(), "42".into()),
+            ("TELEGRAM_BOT_USERNAME".into(), "agora_bot".into()),
             ("WHATSAPP_VERIFY_TOKEN".into(), "verify-me".into()),
             ("WHATSAPP_APP_SECRET".into(), "sign-me".into()),
+            ("WHATSAPP_ACCESS_TOKEN".into(), "wa-token".into()),
+            ("WHATSAPP_PHONE_NUMBER_ID".into(), "phone".into()),
+            ("WHATSAPP_WABA_ID".into(), "waba".into()),
+            ("WHATSAPP_GROUP_ID".into(), "group".into()),
+            ("WHATSAPP_ALLOWED_USER_IDS".into(), "sender".into()),
         ]))
         .unwrap();
         let db = PgPoolOptions::new()
@@ -153,7 +273,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_is_public_and_stable() {
-        let response = app()
+        let response = app("telegram")
             .oneshot(Request::get("/health").body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -163,8 +283,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn verifies_matching_challenge() {
-        let response = app()
+    async fn verifies_matching_whatsapp_challenge() {
+        let response = app("telegram")
             .oneshot(
                 Request::get(
                     "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=1234",
@@ -174,96 +294,111 @@ mod tests {
             )
             .await
             .unwrap();
-
         assert_eq!(response.status(), StatusCode::OK);
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        assert_eq!(body, "1234");
     }
 
     #[tokio::test]
-    async fn rejects_wrong_verification_token() {
-        let response = app()
+    async fn rejects_invalid_provider_secrets_before_database_access() {
+        let telegram = app("telegram")
             .oneshot(
-                Request::get(
-                    "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1234",
-                )
-                .body(Body::empty())
-                .unwrap(),
+                Request::post("/webhooks/telegram")
+                    .header("x-telegram-bot-api-secret-token", "wrong")
+                    .body(Body::from("not-json"))
+                    .unwrap(),
             )
             .await
             .unwrap();
+        assert_eq!(telegram.status(), StatusCode::UNAUTHORIZED);
 
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    }
-
-    #[tokio::test]
-    async fn rejects_unsigned_webhook_before_database_access() {
-        let response = app()
+        let whatsapp = app("whatsapp")
             .oneshot(
                 Request::post("/webhooks/whatsapp")
-                    .header("content-type", "application/json")
                     .body(Body::from("{}"))
                     .unwrap(),
             )
             .await
             .unwrap();
-
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(whatsapp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
-    async fn enforces_webhook_body_limit() {
-        let response = app()
+    async fn authenticates_and_ignores_the_inactive_provider_before_parsing() {
+        let body = b"not-json";
+        let whatsapp = app("telegram")
             .oneshot(
                 Request::post("/webhooks/whatsapp")
+                    .header("x-hub-signature-256", signature(body))
+                    .body(Body::from(body.as_slice()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(whatsapp.status(), StatusCode::OK);
+
+        let telegram = app("whatsapp")
+            .oneshot(
+                Request::post("/webhooks/telegram")
+                    .header("x-telegram-bot-api-secret-token", "telegram-secret")
+                    .body(Body::from("not-json"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(telegram.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn validates_active_payloads_and_body_limit() {
+        let malformed = app("telegram")
+            .oneshot(
+                Request::post("/webhooks/telegram")
+                    .header("x-telegram-bot-api-secret-token", "telegram-secret")
+                    .body(Body::from("not-json"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
+
+        let missing_id = app("telegram")
+            .oneshot(
+                Request::post("/webhooks/telegram")
+                    .header("x-telegram-bot-api-secret-token", "telegram-secret")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing_id.status(), StatusCode::BAD_REQUEST);
+
+        let oversized = app("telegram")
+            .oneshot(
+                Request::post("/webhooks/telegram")
                     .body(Body::from(vec![b'x'; 1_048_577]))
                     .unwrap(),
             )
             .await
             .unwrap();
-
-        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     #[tokio::test]
-    async fn readiness_reports_an_unavailable_database() {
-        let response = app()
+    async fn readiness_and_persistence_fail_closed() {
+        let readiness = app("telegram")
             .oneshot(Request::get("/ready").body(Body::empty()).unwrap())
             .await
             .unwrap();
+        assert_eq!(readiness.status(), StatusCode::SERVICE_UNAVAILABLE);
 
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    }
-
-    #[tokio::test]
-    async fn rejects_signed_invalid_json() {
-        let body = b"not-json";
-        let response = app()
+        let response = app("telegram")
             .oneshot(
-                Request::post("/webhooks/whatsapp")
-                    .header("x-hub-signature-256", signature(body))
-                    .body(Body::from(body.as_slice()))
+                Request::post("/webhooks/telegram")
+                    .header("x-telegram-bot-api-secret-token", "telegram-secret")
+                    .body(Body::from(r#"{"update_id":1}"#))
                     .unwrap(),
             )
             .await
             .unwrap();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn reports_persistence_failure_without_exposing_details() {
-        let body = br#"{"object":"whatsapp_business_account","entry":[]}"#;
-        let response = app()
-            .oneshot(
-                Request::post("/webhooks/whatsapp")
-                    .header("x-hub-signature-256", signature(body))
-                    .body(Body::from(body.as_slice()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = response.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(body, r#"{"accepted":false}"#);

@@ -1,20 +1,21 @@
 # Decisiones de Agora
 
-Última actualización: 29 de julio de 2026.
+Última actualización: 31 de julio de 2026.
 
 Este documento es autoritativo para la versión 1 y prevalece sobre propuestas
 anteriores del roadmap.
 
 ## Producto
 
-- Agora funciona únicamente dentro de un grupo cerrado asociado al proyecto
-  Agora en WhatsApp.
-- Se usarán sólo WhatsApp Cloud API y Groups API oficiales. No hay fallback a
-  chats 1:1 ni automatización de WhatsApp Web.
-- El bot busca conocimiento y responde automáticamente cuando se lo invoca con
-  `@agora`.
-- Los seis participantes iniciales se configuran mediante
-  `ALLOWED_WHATSAPP_IDS`; sus números no se versionan.
+- Agora representa un único espacio lógico cerrado mediante Telegram o
+  WhatsApp. Telegram es el proveedor predeterminado y sólo uno está activo por
+  instancia.
+- Se usarán sólo Telegram Bot API y WhatsApp Cloud/Groups API oficiales. No hay
+  fallback a chats 1:1, Signal ni automatización de WhatsApp Web.
+- El bot busca conocimiento y responde cuando se lo invoca con `@agora_telegram_bot` o
+  `/agora` en Telegram y `@agora` en WhatsApp.
+- Cada proveedor tiene grupo y allowlist propios; los identificadores no se
+  versionan. Ambos comparten exclusivamente `KNOWLEDGE_SPACE_ID`.
 - No existe sitio, interfaz web, login ni API pública de búsqueda.
 - Idioma único: español.
 - Contenido v1: texto, DOC, DOCX, PDF, XLS y XLSX.
@@ -22,6 +23,20 @@ anteriores del roadmap.
 - Volumen esperado: bajo.
 - Los mensajes, texto extraído y archivos originales se conservan mientras el
   proyecto esté activo o hasta una solicitud válida de eliminación.
+
+## Proveedores de chat
+
+- `CHAT_PROVIDER` acepta `telegram` o `whatsapp`, usa Telegram por defecto y
+  requiere reiniciar el contenedor al cambiar.
+- Ambos webhooks permanecen registrados. El proveedor inactivo se autentica y
+  responde `200`, pero no persiste eventos.
+- Eventos, mensajes, adjuntos, jobs y salidas registran proveedor. Los eventos
+  y jobs inactivos quedan congelados y nunca se despachan con el otro cliente.
+- Telegram admite grupos y supergrupos, usa secreto de webhook, limita descargas
+  a 20 MiB, responde con `sendMessage` y no posee estados delivered/read.
+- WhatsApp conserva su HMAC, límite de 25 MiB y estados sent/delivered/read.
+- La búsqueda RAG se aísla por espacio lógico, no por grupo técnico, para
+  mantener continuidad al alternar plataformas.
 
 ## Restricción confirmada de Meta
 
@@ -56,8 +71,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - La WABA y el negocio están aprobados. El 29/07/2026 el número de `Agora`
   quedó registrado en Cloud API: el nombre figura `Approved`, WhatsApp Manager
   muestra `Connected` y Graph API informa throughput `STANDARD`. El intento
-  real de crear el grupo devuelve `131215` porque el número todavía no es
-  elegible para Groups API.
+  real de crear el grupo volvió a devolver `131215` el 30/07/2026 porque el
+  número todavía no es elegible para Groups API.
 - El perfil empresarial enlaza directamente a `/privacy` y `/terms`; se retiró
   la URL raíz porque devuelve `404` y podía perjudicar la validación externa
   del nombre comercial.
@@ -65,11 +80,11 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   WhatsApp Business Platform, tenga negocio verificado, nombre aprobado y
   verificación en dos pasos en el número. La WABA `Agora` tiene actividad desde
   febrero de 2026 y cumple esos requisitos, pero WhatsApp Manager todavía no
-  habilita la solicitud y Graph API informa `oba_status=NOT_STARTED`. Direct
-  Support cerró el caso `28216915367901535` el 29/07/2026 indicando que OBA sólo
-  está disponible por autoservicio cuando Meta habilita el botón o mediante un
-  BSP con Meta Point of Contact, y que actualmente no la ofrece a las demás
-  cuentas.
+  habilita la solicitud y Graph API todavía informa
+  `oba_status=NOT_STARTED` el 30/07/2026. Direct Support cerró el caso
+  `28216915367901535` el 29/07/2026 indicando que OBA sólo está disponible por
+  autoservicio cuando Meta habilita el botón o mediante un BSP con Meta Point of
+  Contact, y que actualmente no la ofrece a las demás cuentas.
 - La 2FA obligatoria para los usuarios del Business Portfolio no equivale a la
   verificación en dos pasos del número. Graph API confirmó el registro con el
   PIN y WhatsApp Manager muestra `Enabled` para el número de `Agora` el
@@ -85,8 +100,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - App Review está iniciado con sólo `whatsapp_business_messaging` y
   `whatsapp_business_management`; `public_profile` se retiró porque Agora no lo
   utiliza. Las descripciones y el formulario de tratamiento de datos quedaron
-  preparados; faltan el screencast y las llamadas reales dependientes del
-  grupo.
+  preparados; el borrador figura `Not submitted` el 30/07/2026 y faltan el
+  screencast y las llamadas reales dependientes del grupo.
 - Agora es un RAG de dominio limitado al conocimiento del grupo, no un asistente
   general abierto. La revisión legal previa al piloto debe confirmar que esta
   caracterización cumple las condiciones vigentes de Meta para servicios de IA.
@@ -126,6 +141,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - Los backups de PostgreSQL incluyen también los documentos originales, por lo
   que crecerán con el volumen documental.
 - No se contrata un servicio externo de alertas.
+- Telegram y Meta son procesadores posibles de mensajería; sólo el seleccionado
+  recibe y envía contenido de Agora en una instancia determinada.
 
 ## Privacidad
 
@@ -135,16 +152,17 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - Todos los participantes deben consentir el tratamiento antes del piloto.
 - Los seis participantes dieron consentimiento antes del piloto; la evidencia
   y la revisión legal se conservan fuera del proyecto.
-- Meta recibe mensajería y OpenAI recibe el contenido necesario para embeddings
-  y respuestas.
+- Telegram o Meta reciben la mensajería según el proveedor activo y OpenAI
+  recibe el contenido necesario para embeddings y respuestas.
 - Existen avisos públicos en `/privacy`, `/terms` y `/data-deletion`.
 - Las solicitudes de acceso, exportación o eliminación se reciben por correo y
   requieren verificación de identidad.
 
 ## Pendientes que no pueden inventarse
 
+- Rotación del token de Telegram compartido durante la puesta en marcha e
+  incorporación de los cinco participantes restantes a la allowlist.
 - Group ID y allowlist de participantes. WABA ID, Phone Number ID, App Secret y
   token permanente ya están cargados fuera de Git.
-- Aprobación OBA/Groups API y resolución de la revisión del nombre por el
-  Integrity Team. El negocio y la verificación en dos pasos del número ya están
-  completos.
+- Aprobación OBA/Groups API. El nombre, el negocio y la verificación en dos
+  pasos del número ya están aprobados.

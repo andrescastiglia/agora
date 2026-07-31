@@ -6,22 +6,27 @@ decisiones de producto en `decisiones.md`.
 
 ## Alcance invariable
 
-Agora es un backend y worker en Rust para un único grupo cerrado de WhatsApp.
-No hay aplicación web. Los únicos endpoints públicos son el webhook, health,
-readiness y los tres avisos legales.
+Agora es un backend y worker en Rust para un único espacio lógico cerrado que
+puede operar mediante Telegram o WhatsApp. Sólo un proveedor está activo por
+instancia y Telegram es el predeterminado. No hay aplicación web. Los únicos
+endpoints públicos son ambos webhooks, health, readiness y los tres avisos
+legales.
 
 La versión 1:
 
-- usa exclusivamente las APIs oficiales WhatsApp Cloud y Groups;
+- usa exclusivamente Telegram Bot API y WhatsApp Cloud/Groups API oficiales;
 - acepta texto, DOC, DOCX, PDF, XLS y XLSX en español;
-- responde sólo cuando un participante autorizado invoca `@agora`;
-- aísla siempre datos por `WHATSAPP_GROUP_ID`;
+- responde sólo cuando un participante autorizado invoca `@agora`,
+  `@agora_telegram_bot` o `/agora`, según el proveedor;
+- aísla conversaciones y participantes por proveedor y comparte RAG únicamente
+  mediante `KNOWLEDGE_SPACE_ID`;
 - usa OpenAI para embeddings y generación;
 - conserva archivos originales como binarios en PostgreSQL;
 - se despliega en `oracle` mediante la imagen ARM64 publicada en GHCR.
 
-No agregar chat 1:1, sitio web, endpoint de búsqueda público, audio, imágenes,
-OCR ni importación histórica sin una nueva decisión explícita.
+No agregar chat 1:1, Signal, WhatsApp Web, sitio web, endpoint de búsqueda
+público, audio, imágenes, OCR ni importación histórica sin una nueva decisión
+explícita.
 
 ## Arquitectura
 
@@ -30,7 +35,7 @@ flowchart TD
     http["src/http.rs<br/>recepción rápida y firmada"] --> repo["src/repository.rs"]
     repo --> db["PostgreSQL + pgvector"]
     worker["src/worker.rs"] --> repo
-    worker --> wa["src/whatsapp.rs<br/>Graph API"]
+    worker --> chat["src/chat/<br/>Telegram Bot API / Graph API"]
     worker --> ai["src/openai.rs<br/>Responses + embeddings"]
     worker --> docs["src/document.rs<br/>extracción"]
     worker --> repo
@@ -41,16 +46,20 @@ shutdown. La conducta testeable debe permanecer en la biblioteca.
 
 ## Invariantes
 
-1. Verificar HMAC sobre el cuerpo original antes de parsear o acceder a la base.
-2. Persistir el evento original antes de responder a Meta.
+1. Autenticar cada webhook antes de parsear o acceder a la base: HMAC del cuerpo
+   original para WhatsApp y secreto constante para Telegram.
+2. Autenticar pero no persistir eventos del proveedor inactivo; persistir el
+   evento original del proveedor activo antes de responder.
 3. Mantener webhook, jobs, mensajes y respuestas salientes idempotentes.
 4. No realizar red, extracción ni generación dentro del handler HTTP.
-5. No procesar mensajes 1:1 ni grupos distintos al configurado.
-6. No enviar respuestas para participantes fuera de la allowlist.
-7. Construir RAG únicamente con fragmentos del mismo grupo y excluir la pregunta.
+5. No procesar mensajes 1:1 ni grupos distintos al configurado para cada proveedor.
+6. No enviar respuestas para participantes fuera de la allowlist del proveedor.
+7. Construir RAG únicamente con fragmentos del mismo `space_id` y excluir la pregunta.
 8. Tratar documentos y contexto RAG como entrada no confiable.
 9. No registrar tokens, números completos, contenido de documentos ni secretos.
 10. Agregar migraciones; nunca modificar una migración ya aplicada.
+11. Eventos y jobs del proveedor inactivo permanecen congelados. El proveedor
+    persistido es autoritativo para descargar y enviar.
 
 ## Seguridad y secretos
 
@@ -70,6 +79,9 @@ Al automatizar Meta con Playwright:
   explícita del objetivo;
 - recordar que mostrar el App Secret puede exigir reingresar la contraseña.
 
+Los URLs de Telegram incorporan el bot token. Nunca registrarlos ni incluir
+errores de transporte completos que puedan revelarlos.
+
 En `oracle`, usar `sudo -u postgres -H` para PostgreSQL y
 `sudo -u deploy -H` para procesos o Docker del usuario `deploy`. No inspeccionar
 entornos completos de PM2 porque pueden contener secretos de otros proyectos.
@@ -81,6 +93,7 @@ preservar:
 
 - `webhook_events.payload` como fuente original;
 - claves externas únicas;
+- proveedor explícito en eventos, mensajes, adjuntos, jobs y salidas;
 - reintentos con error sanitizado y estado dead-letter;
 - borrado en cascada explícito;
 - embeddings de exactamente 1536 dimensiones mientras el esquema actual siga
@@ -93,8 +106,10 @@ el mismo resultado o detectar que ya fue completado.
 
 ## Proveedores
 
-Usar Graph API `v25.0`, salvo migración explícita. El payload de envío grupal
-debe conservar `recipient_type: "group"`.
+Telegram usa Bot API oficial, secreto de webhook, `getFile`/descarga con límite
+de 20 MiB y `sendMessage` con reply cuando sea posible. WhatsApp usa Graph API
+`v25.0`, salvo migración explícita, y su payload grupal conserva
+`recipient_type: "group"`.
 
 OpenAI usa:
 

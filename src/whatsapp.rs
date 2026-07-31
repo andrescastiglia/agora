@@ -467,6 +467,8 @@ mod tests {
     fn client_config(with_credentials: bool) -> Config {
         let mut values = HashMap::from([
             ("DATABASE_URL".into(), "postgres://localhost/agora".into()),
+            ("KNOWLEDGE_SPACE_ID".into(), "agora".into()),
+            ("CHAT_PROVIDER".into(), "whatsapp".into()),
             ("WHATSAPP_VERIFY_TOKEN".into(), "verify".into()),
             ("WHATSAPP_APP_SECRET".into(), "secret".into()),
         ]);
@@ -474,6 +476,15 @@ mod tests {
             values.insert("WHATSAPP_ACCESS_TOKEN".into(), "test-token".into());
             values.insert("WHATSAPP_PHONE_NUMBER_ID".into(), "phone-test".into());
             values.insert("WHATSAPP_WABA_ID".into(), "waba-test".into());
+            values.insert("WHATSAPP_GROUP_ID".into(), "group-test".into());
+            values.insert("WHATSAPP_ALLOWED_USER_IDS".into(), "sender-test".into());
+        } else {
+            values.insert("CHAT_PROVIDER".into(), "telegram".into());
+            values.insert("TELEGRAM_BOT_TOKEN".into(), "telegram-token".into());
+            values.insert("TELEGRAM_WEBHOOK_SECRET".into(), "telegram-secret".into());
+            values.insert("TELEGRAM_GROUP_ID".into(), "-1001".into());
+            values.insert("TELEGRAM_ALLOWED_USER_IDS".into(), "42".into());
+            values.insert("TELEGRAM_BOT_USERNAME".into(), "agora_bot".into());
         }
         Config::from_map(values).unwrap()
     }
@@ -609,6 +620,7 @@ mod tests {
             Some("application/octet-stream")
         ));
         assert!(!supported_document(Some("informe.pdf"), Some("image/png")));
+        assert!(!supported_document(None, Some("application/pdf")));
     }
 
     #[test]

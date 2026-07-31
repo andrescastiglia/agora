@@ -111,7 +111,11 @@ impl OpenAiClient {
             response_model: config.openai_response_model.clone(),
             embedding_model: config.openai_embedding_model.clone(),
             embedding_dimensions: config.openai_embedding_dimensions,
-            safety_identifier_key: config.whatsapp_app_secret.expose().as_bytes().to_vec(),
+            safety_identifier_key: config
+                .safety_identifier_secret()
+                .expose()
+                .as_bytes()
+                .to_vec(),
             base_url: "https://api.openai.com/v1".into(),
         })
     }
@@ -240,8 +244,12 @@ mod tests {
     fn config(with_key: bool) -> Config {
         let mut values = HashMap::from([
             ("DATABASE_URL".into(), "postgres://localhost/agora".into()),
-            ("WHATSAPP_VERIFY_TOKEN".into(), "verify".into()),
-            ("WHATSAPP_APP_SECRET".into(), "secret".into()),
+            ("KNOWLEDGE_SPACE_ID".into(), "agora".into()),
+            ("TELEGRAM_BOT_TOKEN".into(), "telegram-token".into()),
+            ("TELEGRAM_WEBHOOK_SECRET".into(), "secret".into()),
+            ("TELEGRAM_GROUP_ID".into(), "-1001".into()),
+            ("TELEGRAM_ALLOWED_USER_IDS".into(), "42".into()),
+            ("TELEGRAM_BOT_USERNAME".into(), "agora_bot".into()),
         ]);
         if with_key {
             values.insert("OPENAI_API_KEY".into(), "test-key".into());

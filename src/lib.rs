@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod config;
 pub mod document;
 pub mod http;
@@ -6,7 +7,6 @@ pub mod openai;
 pub mod repository;
 pub mod security;
 pub mod text;
-pub mod whatsapp;
 pub mod worker;
 
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use tower_http::{limit::RequestBodyLimitLayer, trace::TraceLayer};
 
 use crate::{
     config::Config,
-    http::{health, ready, receive_whatsapp, verify_whatsapp},
+    http::{health, ready, receive_telegram, receive_whatsapp, verify_whatsapp},
     legal::{data_deletion, privacy, terms},
 };
 
@@ -40,6 +40,7 @@ pub fn build_router(state: AppState) -> Router {
             "/webhooks/whatsapp",
             get(verify_whatsapp).post(receive_whatsapp),
         )
+        .route("/webhooks/telegram", axum::routing::post(receive_telegram))
         .layer(RequestBodyLimitLayer::new(body_limit))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
