@@ -120,12 +120,12 @@ no pertenecen a la versión 1.
 - [ ] Obtener elegibilidad Official Business Account. La WABA `Agora` tiene
   actividad desde febrero de 2026 y cumple los requisitos documentados: negocio
   verificado, nombre `Approved` y verificación en dos pasos activa. Sin embargo,
-  `official_business_account.oba_status` devuelve `NOT_STARTED` y el botón
-  `Submit request` continúa deshabilitado. Direct Support cerró el caso
-  `28216915367901535`: OBA sólo está disponible por autoservicio cuando Meta
-  habilita el botón o mediante un BSP con Meta Point of Contact; actualmente no
-  la ofrece a las demás cuentas. El caso anterior de revisión del nombre
-  `28334978916099204` figura `Resolved`.
+  `official_business_account.oba_status` todavía devuelve `NOT_STARTED` el
+  30/07/2026 y el botón `Submit request` continúa deshabilitado. Direct Support
+  cerró el caso `28216915367901535`: OBA sólo está disponible por autoservicio
+  cuando Meta habilita el botón o mediante un BSP con Meta Point of Contact;
+  actualmente no la ofrece a las demás cuentas. El caso anterior de revisión
+  del nombre `28334978916099204` figura `Resolved`.
 - [x] Completar verificación del negocio y requisito de 2FA para sus usuarios
   (Business Portfolio y Tech Provider verificados; 2FA requerida para todos).
 - [x] Activar la verificación en dos pasos específica del número. Graph API
@@ -144,7 +144,7 @@ no pertenecen a la versión 1.
 - [x] Inventariar WABA ID y Phone Number ID fuera de Git, en
   `/etc/agora/agora.env`.
 - [ ] Crear el grupo oficial por Groups API e invitar a los seis participantes.
-  El intento real contra el número de `Agora` el 29/07/2026 devuelve `131215`
+  El intento real contra el número de `Agora` el 30/07/2026 devuelve `131215`
   porque el número todavía no es elegible para Groups API.
 - [x] Configurar callback `https://agora.maese.com.ar/webhooks/whatsapp`.
 - [x] Suscribir `messages`, `group_lifecycle_update`,
@@ -163,8 +163,9 @@ no pertenecen a la versión 1.
 - [x] Iniciar App Review, documentar el uso real de
   `whatsapp_business_messaging` y `whatsapp_business_management`, declarar
   responsables/procesadores y retirar `public_profile` de la solicitud porque
-  Agora no lo usa. La entrega queda pendiente del screencast y las llamadas
-  reales que sólo pueden ejecutarse después de habilitar Groups API.
+  Agora no lo usa. El borrador figura `Not submitted` el 30/07/2026; la entrega
+  queda pendiente del screencast y las llamadas reales que sólo pueden
+  ejecutarse después de habilitar Groups API.
 
 ## 7. Secretos y consentimiento
 

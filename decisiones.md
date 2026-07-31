@@ -71,8 +71,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - La WABA y el negocio están aprobados. El 29/07/2026 el número de `Agora`
   quedó registrado en Cloud API: el nombre figura `Approved`, WhatsApp Manager
   muestra `Connected` y Graph API informa throughput `STANDARD`. El intento
-  real de crear el grupo devuelve `131215` porque el número todavía no es
-  elegible para Groups API.
+  real de crear el grupo volvió a devolver `131215` el 30/07/2026 porque el
+  número todavía no es elegible para Groups API.
 - El perfil empresarial enlaza directamente a `/privacy` y `/terms`; se retiró
   la URL raíz porque devuelve `404` y podía perjudicar la validación externa
   del nombre comercial.
@@ -80,11 +80,11 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   WhatsApp Business Platform, tenga negocio verificado, nombre aprobado y
   verificación en dos pasos en el número. La WABA `Agora` tiene actividad desde
   febrero de 2026 y cumple esos requisitos, pero WhatsApp Manager todavía no
-  habilita la solicitud y Graph API informa `oba_status=NOT_STARTED`. Direct
-  Support cerró el caso `28216915367901535` el 29/07/2026 indicando que OBA sólo
-  está disponible por autoservicio cuando Meta habilita el botón o mediante un
-  BSP con Meta Point of Contact, y que actualmente no la ofrece a las demás
-  cuentas.
+  habilita la solicitud y Graph API todavía informa
+  `oba_status=NOT_STARTED` el 30/07/2026. Direct Support cerró el caso
+  `28216915367901535` el 29/07/2026 indicando que OBA sólo está disponible por
+  autoservicio cuando Meta habilita el botón o mediante un BSP con Meta Point of
+  Contact, y que actualmente no la ofrece a las demás cuentas.
 - La 2FA obligatoria para los usuarios del Business Portfolio no equivale a la
   verificación en dos pasos del número. Graph API confirmó el registro con el
   PIN y WhatsApp Manager muestra `Enabled` para el número de `Agora` el
@@ -100,8 +100,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - App Review está iniciado con sólo `whatsapp_business_messaging` y
   `whatsapp_business_management`; `public_profile` se retiró porque Agora no lo
   utiliza. Las descripciones y el formulario de tratamiento de datos quedaron
-  preparados; faltan el screencast y las llamadas reales dependientes del
-  grupo.
+  preparados; el borrador figura `Not submitted` el 30/07/2026 y faltan el
+  screencast y las llamadas reales dependientes del grupo.
 - Agora es un RAG de dominio limitado al conocimiento del grupo, no un asistente
   general abierto. La revisión legal previa al piloto debe confirmar que esta
   caracterización cumple las condiciones vigentes de Meta para servicios de IA.
@@ -164,6 +164,5 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   incorporación de los cinco participantes restantes a la allowlist.
 - Group ID y allowlist de participantes. WABA ID, Phone Number ID, App Secret y
   token permanente ya están cargados fuera de Git.
-- Aprobación OBA/Groups API y resolución de la revisión del nombre por el
-  Integrity Team. El negocio y la verificación en dos pasos del número ya están
-  completos.
+- Aprobación OBA/Groups API. El nombre, el negocio y la verificación en dos
+  pasos del número ya están aprobados.
