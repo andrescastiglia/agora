@@ -56,7 +56,7 @@ telegram_request() {
 
 if [[ $mode == "apply" ]]; then
   escaped_data=$(printf \
-    '{\\"url\\":\\"%s\\",\\"secret_token\\":\\"%s\\",\\"allowed_updates\\":[\\"message\\",\\"edited_message\\"],\\"drop_pending_updates\\":false}' \
+    '{\\"url\\":\\"%s\\",\\"secret_token\\":\\"%s\\",\\"allowed_updates\\":[\\"message\\"],\\"drop_pending_updates\\":false}' \
     "$webhook_url" "$telegram_webhook_secret")
   readonly escaped_data
   response=$(telegram_request "setWebhook" "$escaped_data")

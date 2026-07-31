@@ -14,7 +14,6 @@ struct Update {
     #[allow(dead_code)]
     update_id: i64,
     message: Option<Message>,
-    edited_message: Option<Message>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,7 +63,7 @@ pub fn update_id(payload: &Value) -> Option<String> {
 
 pub fn parse_event(payload: &Value, space_id: &str) -> anyhow::Result<ParsedEvent> {
     let update: Update = serde_json::from_value(payload.clone())?;
-    let Some(message) = update.message.or(update.edited_message) else {
+    let Some(message) = update.message else {
         return Ok(ParsedEvent::default());
     };
     if !matches!(message.chat.kind.as_str(), "group" | "supergroup") {
@@ -441,6 +440,23 @@ mod tests {
         });
         assert!(
             parse_event(&service_message, "agora")
+                .unwrap()
+                .messages
+                .is_empty()
+        );
+
+        let edited_message = json!({
+            "update_id": 4,
+            "edited_message": {
+                "message_id": 11,
+                "date": 1700000001,
+                "chat": {"id": -1001, "type": "supergroup"},
+                "from": {"id": 42, "first_name": "Ana"},
+                "text": "/agora texto editado"
+            }
+        });
+        assert!(
+            parse_event(&edited_message, "agora")
                 .unwrap()
                 .messages
                 .is_empty()
