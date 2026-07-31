@@ -49,7 +49,14 @@ mod tests {
                 "text/html; charset=utf-8"
             );
             let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-            assert!(String::from_utf8(body.to_vec()).unwrap().contains("Agora"));
+            let body = String::from_utf8(body.to_vec()).unwrap();
+            assert!(body.contains("Agora"));
         }
+        let privacy = to_bytes(privacy().await.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let privacy = String::from_utf8(privacy.to_vec()).unwrap();
+        assert!(privacy.contains("Telegram"));
+        assert!(privacy.contains("WhatsApp"));
     }
 }

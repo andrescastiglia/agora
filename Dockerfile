@@ -8,7 +8,7 @@ RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
 LABEL org.opencontainers.image.source="https://github.com/andrescastiglia/agora" \
-      org.opencontainers.image.description="Backend de Agora para grupos oficiales de WhatsApp" \
+      org.opencontainers.image.description="Backend de Agora para grupos oficiales de Telegram y WhatsApp" \
       org.opencontainers.image.licenses="MIT"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

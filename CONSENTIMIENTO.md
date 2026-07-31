@@ -9,10 +9,12 @@ conserva fuera de Git junto con la evidencia de aceptación.
 Agora recibe los mensajes y documentos compartidos en el grupo oficial del
 piloto, conserva el contenido mientras el proyecto esté activo o hasta una
 solicitud válida de eliminación, y lo usa para construir una base de
-conocimiento y responder preguntas invocadas con `@agora`.
+conocimiento y responder preguntas invocadas con `@agora`, `@agora_telegram_bot` o
+`/agora`, según el proveedor activo.
 
-Meta procesa la mensajería de WhatsApp. OpenAI recibe el contenido necesario
-para generar embeddings y respuestas. Los documentos originales se almacenan
+Telegram puede procesar la mensajería mediante Bot API y Meta mediante WhatsApp
+Business Platform; sólo uno está activo en cada momento. OpenAI recibe el
+contenido necesario para generar embeddings y respuestas. Los documentos originales se almacenan
 como binarios en PostgreSQL, dentro de la infraestructura administrada por el
 responsable. Las condiciones completas están en:
 

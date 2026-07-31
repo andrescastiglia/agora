@@ -1,30 +1,34 @@
 # TODO — Puesta en producción de Agora
 
-Última auditoría: 29 de julio de 2026.
+Última auditoría: 31 de julio de 2026.
 
-Esta lista refleja el alcance acordado en `decisiones.md`. Las referencias a una
-interfaz web, chat 1:1, audio, OCR o importación histórica fueron eliminadas
-porque no pertenecen a la versión 1.
+Esta lista refleja el alcance acordado en `decisiones.md`: Telegram y WhatsApp
+conviven como proveedores oficiales de un mismo espacio, con sólo uno activo.
+Interfaz web, chat 1:1, Signal, WhatsApp Web, audio, OCR e importación histórica
+no pertenecen a la versión 1.
 
 ## 1. Backend
 
 - [x] Separar biblioteca, binario, configuración, HTTP, repositorio y worker.
+- [x] Neutralizar mensajes, adjuntos, eventos, jobs y salidas por proveedor.
+- [x] Seleccionar un único proveedor con Telegram como valor predeterminado.
+- [x] Compartir conocimiento por `KNOWLEDGE_SPACE_ID` sin mezclar grupos ni jobs.
 - [x] Fijar Rust 1.97 y versionar `Cargo.lock`.
 - [x] Validar configuración sin revelar secretos.
 - [x] Ejecutar migraciones compatibles al iniciar.
 - [x] Recibir el cuerpo original y limitarlo a 1 MiB.
 - [x] Validar `X-Hub-Signature-256` con comparación constante.
-- [x] Persistir y deduplicar webhooks antes de responder.
+- [x] Autenticar ambos webhooks, ignorar el inactivo y deduplicar por proveedor.
 - [x] Parsear mensajes grupales, documentos, contactos y estados.
-- [x] Ignorar 1:1 y grupos distintos de `WHATSAPP_GROUP_ID`.
-- [x] Restringir respuestas a `ALLOWED_WHATSAPP_IDS`.
+- [x] Ignorar 1:1 y grupos distintos del configurado para cada proveedor.
+- [x] Restringir respuestas a la allowlist específica del proveedor.
 - [x] Implementar jobs PostgreSQL con `SKIP LOCKED`, reintentos y dead-letter.
 - [x] Descargar medios con timeout y límite de 25 MiB.
 - [x] Admitir DOC, DOCX, PDF, XLS y XLSX sin ejecutar un shell.
 - [x] Eliminar archivos temporales incluso ante errores.
 - [x] Guardar originales y su hash en PostgreSQL (`BYTEA`), con límite de 25 MiB.
 - [x] Normalizar, fragmentar y generar embeddings de 1536 dimensiones.
-- [x] Implementar búsqueda híbrida textual/vectorial aislada por grupo.
+- [x] Implementar búsqueda híbrida textual/vectorial aislada por espacio lógico.
 - [x] Generar en español con citas y defensa contra instrucciones en fuentes.
 - [x] Enviar respuestas grupales oficiales e idempotentes.
 - [x] Aplicar estados salientes sin retroceder ante eventos fuera de orden.
@@ -35,6 +39,9 @@ porque no pertenecen a la versión 1.
 - [x] Probar configuración, firma, challenge, límites y errores HTTP.
 - [x] Probar parsers de grupos, documentos y estados.
 - [x] Probar clientes Meta y OpenAI con servidores locales.
+- [x] Probar parser, descarga y envío de Telegram con servidores locales.
+- [x] Probar congelamiento de eventos/jobs inactivos e IDs iguales entre proveedores.
+- [x] Probar migración integral de registros históricos como WhatsApp.
 - [x] Probar la persistencia binaria contra PostgreSQL.
 - [x] Probar migraciones, idempotencia, jobs, búsqueda y estados contra pgvector.
 - [x] Ejecutar `cargo fmt --check`.
@@ -82,7 +89,27 @@ porque no pertenecen a la versión 1.
 - [x] Confirmar que sólo Nginx `80/443` publica Agora; API y PostgreSQL quedan en
   loopback.
 
-## 5. Meta
+## 5. Telegram
+
+- [x] Implementar `POST /webhooks/telegram` con secreto constante antes del parseo.
+- [x] Deduplicar `update_id` y filtrar grupo, chat privado y allowlist.
+- [x] Admitir texto, captions, documentos, `@agora_telegram_bot` y `/agora`.
+- [x] Implementar `getFile`, descarga limitada a 20 MiB y `sendMessage` como reply.
+- [x] Automatizar el registro y la verificación segura del webhook sin exponer el token.
+- [x] Crear el bot productivo `@agora_telegram_bot`, verificar su identidad mediante
+  `getMe` y cargar el token fuera de Git en el servidor.
+- [ ] Regenerar en BotFather el token compartido durante la puesta en marcha y
+  reemplazarlo en `/etc/agora/agora.env` antes de habilitar producción.
+- [x] Desactivar Privacy Mode para que el bot pueda incorporar mensajes del grupo.
+- [x] Crear el grupo privado, agregar el bot y cargar fuera de Git el ID del grupo
+  y el primer participante autorizado. Los otros cinco se incorporarán después.
+- [x] Registrar y verificar `https://agora.maese.com.ar/webhooks/telegram` con secreto.
+- [ ] Cargar ambos bloques de proveedor en `/etc/agora/agora.env`.
+- [x] Desplegar inicialmente con `CHAT_PROVIDER=telegram`; readiness, health,
+  migraciones y recepción real del webhook quedaron verificados.
+- [ ] Alternar controladamente a WhatsApp y volver a Telegram, verificando jobs congelados.
+
+## 6. Meta
 
 - [x] Confirmar app `Agora` y Business Portfolio mediante `auth.json`.
 - [x] Confirmar que el caso de uso WhatsApp está agregado.
@@ -139,13 +166,13 @@ porque no pertenecen a la versión 1.
   Agora no lo usa. La entrega queda pendiente del screencast y las llamadas
   reales que sólo pueden ejecutarse después de habilitar Groups API.
 
-## 6. Secretos y consentimiento
+## 7. Secretos y consentimiento
 
 - [x] Cargar `OPENAI_API_KEY` directamente en `oracle` y validarla contra la API
   sin exponerla (`HTTP 200`).
 - [x] Cargar App Secret, token permanente, WABA ID y Phone Number ID
   directamente en `oracle`.
-- [ ] Cargar Group ID y `ALLOWED_WHATSAPP_IDS` directamente en `oracle` cuando
+- [ ] Cargar Group ID y `WHATSAPP_ALLOWED_USER_IDS` directamente en `oracle` cuando
   existan el grupo elegible y los consentimientos.
 - [x] Preparar un formulario versionado de consentimiento sin datos personales.
 - [x] Documentar consentimiento de los seis participantes fuera del proyecto
@@ -157,13 +184,16 @@ porque no pertenecen a la versión 1.
   proveedores o asistentes de IA (revisión y evidencia conservadas fuera del
   proyecto; confirmado por el responsable el 18/07/2026).
 
-## 7. Prueba final
+## 8. Prueba final
 
 - [x] Firma inválida devuelve `401` en producción.
 - [ ] Evento real se persiste una sola vez (el webhook de prueba firmado del
   panel de Meta ya demostró persistencia y deduplicación).
 - [ ] Documento real queda en PostgreSQL, se extrae y se indexa.
 - [ ] `@agora` responde dentro del grupo con citas.
+- [x] `/agora` responde en Telegram como reply; el flujo real completó embeddings,
+  generación y envío sin jobs muertos el 31/07/2026. Las citas se validarán con
+  el primer documento del grupo.
 - [x] Reiniciar el contenedor no pierde ni duplica jobs (prueba controlada en
   producción el 18/07/2026: mismo UUID pendiente antes y después del reinicio,
   una sola fila, `completed` en un intento, un fragmento generado y datos

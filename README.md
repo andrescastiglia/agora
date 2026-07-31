@@ -1,139 +1,121 @@
 # Agora
 
-Agora es un bot privado para un grupo cerrado de WhatsApp. Recibe mensajes y
-documentos mediante la API oficial de Meta, construye una base de conocimiento
-en español y responde dentro del mismo grupo cuando una persona escribe
-`@agora` seguida de una pregunta.
+Agora es un bot privado para un espacio de conocimiento cerrado que puede
+operar mediante Telegram o WhatsApp. Ambos proveedores oficiales pueden quedar
+configurados simultáneamente, pero sólo uno está activo por instancia. Telegram
+es el predeterminado y el cambio se realiza con `CHAT_PROVIDER` y un reinicio.
 
-No tiene sitio, login ni interfaz web. El dominio `agora.maese.com.ar` existe
-para el webhook HTTPS de Meta, los health checks y los avisos legales públicos.
+Recibe texto y documentos, construye una base de conocimiento en español y
+responde en el mismo grupo ante `@agora_telegram_bot` o `/agora` en Telegram y `@agora`
+en WhatsApp. El conocimiento se comparte entre plataformas mediante
+`KNOWLEDGE_SPACE_ID`; eventos, participantes, jobs y respuestas permanecen
+aislados por proveedor.
+
+No tiene sitio, login ni interfaz web. `agora.maese.com.ar` existe para los
+webhooks HTTPS, health checks y avisos legales.
 
 ## Funcionamiento
 
 ```mermaid
 flowchart LR
-    group["Grupo de WhatsApp"] --> meta["WhatsApp Cloud / Groups API"]
-    meta -->|webhook firmado| api["Agora<br/>Rust + Axum"]
+    telegram["Grupo privado de Telegram"] --> api["Agora<br/>Rust + Axum"]
+    whatsapp["Grupo oficial de WhatsApp"] --> api
     api --> events["PostgreSQL + pgvector<br/>eventos, cola, originales y conocimiento"]
-    events --> worker["Worker idempotente"]
+    events --> worker["Worker idempotente<br/>sólo proveedor activo"]
     worker --> openai["OpenAI<br/>embeddings + respuesta"]
-    worker --> events
-    worker -->|respuesta con citas| meta
+    worker --> telegram
+    worker --> whatsapp
 ```
 
-El handler valida `X-Hub-Signature-256`, conserva el JSON original y responde
-rápidamente. El worker procesa el evento después, con deduplicación, reintentos
-exponenciales y estado dead-letter.
+Ambos webhooks permanecen publicados. Cada solicitud se autentica antes de ser
+parseada; si pertenece al proveedor inactivo responde `200` sin persistirse. El
+worker reclama exclusivamente eventos y jobs del proveedor activo. Cambiar de
+proveedor congela el trabajo pendiente anterior y lo continúa al volver.
 
-Contenido admitido en la versión 1:
+Contenido admitido:
 
-- texto;
+- texto y captions;
 - documentos `.doc`, `.docx`, `.pdf`, `.xls` y `.xlsx`;
+- máximo 20 MiB en Telegram y 25 MiB en WhatsApp;
 - español;
-- mensajes del único grupo configurado y de los seis participantes autorizados.
+- un grupo y una allowlist específicos por proveedor.
 
-No se admiten conversaciones individuales, audio, imágenes, OCR, importación
-histórica ni búsquedas desde una API pública.
-
-## Estado
-
-Implementado:
-
-- verificación y firma del webhook de Meta;
-- persistencia idempotente del evento original;
-- parser tipado de mensajes grupales, documentos y estados de entrega;
-- cola PostgreSQL con `FOR UPDATE SKIP LOCKED`, reintentos y dead letters;
-- descarga limitada de medios y extracción aislada sin ejecutar un shell;
-- almacenamiento de documentos originales como binarios en PostgreSQL, junto con su hash;
-- chunking, embeddings, búsqueda híbrida por grupo y respuestas RAG con citas;
-- envío grupal oficial y deduplicación de respuestas salientes;
-- health, readiness y avisos de privacidad, términos y eliminación;
-- pruebas sin llamadas reales a Meta/OpenAI y cobertura de líneas superior a
-  81%;
-- workflows de CI, publicación multi-arquitectura en GHCR y despliegue
-  automático con rollback en `oracle`.
-
-La puesta en producción depende además de activos externos. El estado verificable
-y los bloqueos se mantienen en [`TODO.md`](TODO.md).
+No se admiten chats privados, audio, imágenes, OCR, importación histórica,
+Signal, WhatsApp Web ni una API pública de búsqueda.
 
 ## Desarrollo local
 
 Requisitos:
 
-- Rust 1.97, instalado automáticamente por `rust-toolchain.toml`;
+- Rust 1.97;
 - Docker y Docker Compose;
-- `pdftotext`, LibreOffice y `antiword` para probar extracción fuera del
-  contenedor.
-
-Iniciar PostgreSQL:
+- `pdftotext`, LibreOffice y `antiword` para extracción fuera del contenedor.
 
 ```bash
 docker compose up -d postgres
-```
-
-Crear la configuración:
-
-```bash
 cp .env.example .env
-```
-
-Como mínimo, reemplazá los valores de `DATABASE_URL`,
-`WHATSAPP_VERIFY_TOKEN` y `WHATSAPP_APP_SECRET`. Luego:
-
-```bash
 cargo run
 ```
 
-El servicio escucha en `http://localhost:8080` de forma predeterminada.
+Completá `DATABASE_URL`, `KNOWLEDGE_SPACE_ID` y todo el bloque del proveedor
+seleccionado. Las credenciales del proveedor inactivo pueden quedar vacías en
+desarrollo. En producción se cargan ambos bloques para que el único cambio sea:
+
+```env
+CHAT_PROVIDER=telegram
+# o CHAT_PROVIDER=whatsapp
+```
 
 ## Endpoints públicos
 
 | Método | Ruta | Finalidad |
 | --- | --- | --- |
-| `GET` | `/health` | Indica que el proceso está activo |
-| `GET` | `/ready` | Comprueba la conexión a PostgreSQL |
-| `GET` | `/webhooks/whatsapp` | Desafío de verificación de Meta |
-| `POST` | `/webhooks/whatsapp` | Recepción firmada de eventos |
+| `GET` | `/health` | Proceso activo |
+| `GET` | `/ready` | PostgreSQL y configuración activa completos |
+| `POST` | `/webhooks/telegram` | Updates autenticados de Telegram |
+| `GET` | `/webhooks/whatsapp` | Challenge de Meta |
+| `POST` | `/webhooks/whatsapp` | Eventos firmados de WhatsApp |
 | `GET` | `/privacy` | Política de privacidad |
 | `GET` | `/terms` | Términos de uso |
-| `GET` | `/data-deletion` | Instrucciones de exportación y eliminación |
-
-No existe un endpoint de búsqueda: las consultas se hacen exclusivamente desde
-WhatsApp.
+| `GET` | `/data-deletion` | Exportación y eliminación |
 
 ## Configuración
 
-Secretos obligatorios para iniciar:
+Común:
 
 | Variable | Uso |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL con pgvector |
-| `WHATSAPP_VERIFY_TOKEN` | Desafío inicial del webhook |
-| `WHATSAPP_APP_SECRET` | Verificación HMAC de cada evento |
+| `DATABASE_URL` | PostgreSQL 17 con pgvector |
+| `CHAT_PROVIDER` | `telegram` (predeterminado) o `whatsapp` |
+| `KNOWLEDGE_SPACE_ID` | Espacio RAG compartido por ambos proveedores |
 
-Integración de WhatsApp:
+Telegram:
 
 | Variable | Uso |
 | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | Token de BotFather |
+| `TELEGRAM_WEBHOOK_SECRET` | Verificación constante del webhook |
+| `TELEGRAM_GROUP_ID` | Único grupo o supergrupo admitido |
+| `TELEGRAM_ALLOWED_USER_IDS` | IDs autorizados separados por coma |
+| `TELEGRAM_BOT_USERNAME` | Username usado en menciones |
+
+WhatsApp:
+
+| Variable | Uso |
+| --- | --- |
+| `WHATSAPP_VERIFY_TOKEN` | Challenge de Meta |
+| `WHATSAPP_APP_SECRET` | HMAC del webhook |
 | `WHATSAPP_ACCESS_TOKEN` | Token del system user |
-| `WHATSAPP_PHONE_NUMBER_ID` | Número emisor de Cloud API |
+| `WHATSAPP_PHONE_NUMBER_ID` | Número emisor |
 | `WHATSAPP_WABA_ID` | Cuenta de WhatsApp Business |
-| `WHATSAPP_GROUP_ID` | Único grupo autorizado |
-| `ALLOWED_WHATSAPP_IDS` | IDs separados por coma de participantes |
-| `META_GRAPH_API_VERSION` | Versión fijada, por defecto `v25.0` |
-| `BOT_MENTION` | Prefijo, por defecto `@agora` |
+| `WHATSAPP_GROUP_ID` | Único grupo admitido |
+| `WHATSAPP_ALLOWED_USER_IDS` | Participantes autorizados |
+| `ALLOWED_WHATSAPP_IDS` | Alias obsoleto de la variable anterior |
+| `META_GRAPH_API_VERSION` | `v25.0` por defecto |
 
-OpenAI:
-
-| Variable | Predeterminado |
-| --- | --- |
-| `OPENAI_API_KEY` | Sin valor |
-| `OPENAI_RESPONSE_MODEL` | `gpt-5.6-sol` |
-| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` |
-| `OPENAI_EMBEDDING_DIMENSIONS` | `1536` |
-
-Los límites y valores restantes están documentados en
-[`.env.example`](.env.example). Ningún secreto debe entrar en Git.
+OpenAI usa `gpt-5.6-sol`, `text-embedding-3-small`, 1536 dimensiones y Responses
+API con almacenamiento desactivado. Todos los valores se enumeran en
+[`.env.example`](.env.example); ningún secreto entra en Git o en logs.
 
 ## Pruebas y calidad
 
@@ -146,27 +128,28 @@ TEST_DATABASE_URL=postgres://agora:agora@localhost:5432/agora \
   cargo llvm-cov --workspace --all-features --locked --fail-under-lines 81
 ```
 
-El test de integración se omite localmente si `TEST_DATABASE_URL` no está
-definida. CI siempre inicia PostgreSQL con pgvector y lo ejecuta.
+Las pruebas usan servidores HTTP locales y PostgreSQL/pgvector; no llaman a
+Telegram, Meta ni OpenAI reales.
 
 ## Producción
 
-Cada push a `main`, que debe provenir de un PR con CI verde:
+Cada merge a `main` publica imágenes ARM64/AMD64 por digest y despliega en
+`oracle` con readiness y rollback. Nginx publica únicamente `80/443`; Agora y
+PostgreSQL escuchan en loopback.
 
-1. construye imágenes `linux/amd64` y `linux/arm64`;
-2. publica un tag por SHA y un digest inmutable en GHCR;
-3. genera una attestación de procedencia;
-4. conecta por SSH al environment `oracle`;
-5. aplica `compose.production.yml`;
-6. espera `/ready` y vuelve al digest anterior si falla.
+El código soporta ambos proveedores. La habilitación real de Telegram requiere
+crear el bot y grupo, desactivar Privacy Mode o hacerlo administrador, registrar
+el webhook con secreto y cargar las credenciales fuera de Git. WhatsApp continúa
+condicionado por la elegibilidad de Groups API documentada en [TODO.md](TODO.md).
 
-Nginx sólo publica `80/443`; la API escucha en `127.0.0.1:8088` y PostgreSQL en
-`127.0.0.1:5432`. Los scripts operativos están en [`scripts`](scripts).
+Una vez cargados `TELEGRAM_BOT_TOKEN` y `TELEGRAM_WEBHOOK_SECRET` en el archivo
+protegido del servidor, el webhook se registra y verifica sin exponer esos
+secretos en la línea de comandos:
 
-## Restricción de Meta
+```bash
+sudo -u deploy /opt/agora/configure-telegram-webhook.sh /etc/agora/agora.env
+sudo -u deploy /opt/agora/configure-telegram-webhook.sh --check /etc/agora/agora.env
+```
 
-WhatsApp Groups API requiere una Official Business Account y crea grupos
-programáticamente. No permite convertir silenciosamente una Community existente
-ni usar automatizaciones no oficiales de WhatsApp Web. Por eso el lanzamiento
-queda condicionado a que Meta otorgue elegibilidad y a una prueba real con el
-número productivo.
+El primer comando configura la URL exacta y los tipos de update admitidos; el
+segundo sólo comprueba que Telegram sigue apuntando al endpoint esperado.

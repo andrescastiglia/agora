@@ -1,20 +1,21 @@
 # Decisiones de Agora
 
-Última actualización: 29 de julio de 2026.
+Última actualización: 31 de julio de 2026.
 
 Este documento es autoritativo para la versión 1 y prevalece sobre propuestas
 anteriores del roadmap.
 
 ## Producto
 
-- Agora funciona únicamente dentro de un grupo cerrado asociado al proyecto
-  Agora en WhatsApp.
-- Se usarán sólo WhatsApp Cloud API y Groups API oficiales. No hay fallback a
-  chats 1:1 ni automatización de WhatsApp Web.
-- El bot busca conocimiento y responde automáticamente cuando se lo invoca con
-  `@agora`.
-- Los seis participantes iniciales se configuran mediante
-  `ALLOWED_WHATSAPP_IDS`; sus números no se versionan.
+- Agora representa un único espacio lógico cerrado mediante Telegram o
+  WhatsApp. Telegram es el proveedor predeterminado y sólo uno está activo por
+  instancia.
+- Se usarán sólo Telegram Bot API y WhatsApp Cloud/Groups API oficiales. No hay
+  fallback a chats 1:1, Signal ni automatización de WhatsApp Web.
+- El bot busca conocimiento y responde cuando se lo invoca con `@agora_telegram_bot` o
+  `/agora` en Telegram y `@agora` en WhatsApp.
+- Cada proveedor tiene grupo y allowlist propios; los identificadores no se
+  versionan. Ambos comparten exclusivamente `KNOWLEDGE_SPACE_ID`.
 - No existe sitio, interfaz web, login ni API pública de búsqueda.
 - Idioma único: español.
 - Contenido v1: texto, DOC, DOCX, PDF, XLS y XLSX.
@@ -22,6 +23,20 @@ anteriores del roadmap.
 - Volumen esperado: bajo.
 - Los mensajes, texto extraído y archivos originales se conservan mientras el
   proyecto esté activo o hasta una solicitud válida de eliminación.
+
+## Proveedores de chat
+
+- `CHAT_PROVIDER` acepta `telegram` o `whatsapp`, usa Telegram por defecto y
+  requiere reiniciar el contenedor al cambiar.
+- Ambos webhooks permanecen registrados. El proveedor inactivo se autentica y
+  responde `200`, pero no persiste eventos.
+- Eventos, mensajes, adjuntos, jobs y salidas registran proveedor. Los eventos
+  y jobs inactivos quedan congelados y nunca se despachan con el otro cliente.
+- Telegram admite grupos y supergrupos, usa secreto de webhook, limita descargas
+  a 20 MiB, responde con `sendMessage` y no posee estados delivered/read.
+- WhatsApp conserva su HMAC, límite de 25 MiB y estados sent/delivered/read.
+- La búsqueda RAG se aísla por espacio lógico, no por grupo técnico, para
+  mantener continuidad al alternar plataformas.
 
 ## Restricción confirmada de Meta
 
@@ -126,6 +141,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - Los backups de PostgreSQL incluyen también los documentos originales, por lo
   que crecerán con el volumen documental.
 - No se contrata un servicio externo de alertas.
+- Telegram y Meta son procesadores posibles de mensajería; sólo el seleccionado
+  recibe y envía contenido de Agora en una instancia determinada.
 
 ## Privacidad
 
@@ -135,14 +152,16 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - Todos los participantes deben consentir el tratamiento antes del piloto.
 - Los seis participantes dieron consentimiento antes del piloto; la evidencia
   y la revisión legal se conservan fuera del proyecto.
-- Meta recibe mensajería y OpenAI recibe el contenido necesario para embeddings
-  y respuestas.
+- Telegram o Meta reciben la mensajería según el proveedor activo y OpenAI
+  recibe el contenido necesario para embeddings y respuestas.
 - Existen avisos públicos en `/privacy`, `/terms` y `/data-deletion`.
 - Las solicitudes de acceso, exportación o eliminación se reciben por correo y
   requieren verificación de identidad.
 
 ## Pendientes que no pueden inventarse
 
+- Rotación del token de Telegram compartido durante la puesta en marcha e
+  incorporación de los cinco participantes restantes a la allowlist.
 - Group ID y allowlist de participantes. WABA ID, Phone Number ID, App Secret y
   token permanente ya están cargados fuera de Git.
 - Aprobación OBA/Groups API y resolución de la revisión del nombre por el

@@ -41,6 +41,19 @@ pub fn verify_meta_signature(
     }
 }
 
+pub fn verify_telegram_secret(header: Option<&str>, expected: &str) -> Result<(), SignatureError> {
+    use sha2::Digest;
+
+    let provided = header.ok_or(SignatureError::Missing)?;
+    let provided_hash = Sha256::digest(provided.as_bytes());
+    let expected_hash = Sha256::digest(expected.as_bytes());
+    if provided_hash.ct_eq(&expected_hash).into() {
+        Ok(())
+    } else {
+        Err(SignatureError::Mismatch)
+    }
+}
+
 pub fn sha256_hex(body: &[u8]) -> String {
     use sha2::Digest;
     hex::encode(Sha256::digest(body))
@@ -85,6 +98,22 @@ mod tests {
                 "secret"
             ),
             Err(SignatureError::Mismatch)
+        );
+    }
+
+    #[test]
+    fn verifies_telegram_secrets_in_constant_time() {
+        assert_eq!(
+            verify_telegram_secret(Some("expected-token"), "expected-token"),
+            Ok(())
+        );
+        assert_eq!(
+            verify_telegram_secret(Some("wrong"), "expected-token"),
+            Err(SignatureError::Mismatch)
+        );
+        assert_eq!(
+            verify_telegram_secret(None, "expected-token"),
+            Err(SignatureError::Missing)
         );
     }
 
