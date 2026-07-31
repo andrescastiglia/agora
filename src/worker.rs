@@ -132,7 +132,7 @@ async fn process_event(
                     db,
                     provider,
                     "process_document",
-                    &document.provider_media_id,
+                    &attachment_id.to_string(),
                     json!({
                         "attachment_id": attachment_id,
                         "message_id": message_id,

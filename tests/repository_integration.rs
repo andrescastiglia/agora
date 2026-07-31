@@ -147,6 +147,35 @@ async fn repository_is_provider_safe_and_shares_knowledge_by_space() {
         .await
         .unwrap();
     assert_ne!(whatsapp_attachment, telegram_attachment);
+
+    let forwarded = message(
+        ChatProvider::Telegram,
+        "forwarded-message",
+        "tg-group",
+        None,
+    );
+    let (forwarded_id, inserted) = persist_message(&db, &forwarded).await.unwrap();
+    assert!(inserted);
+    let forwarded_attachment =
+        persist_document(&db, ChatProvider::Telegram, forwarded_id, &document)
+            .await
+            .unwrap();
+    assert_ne!(telegram_attachment, forwarded_attachment);
+    assert_eq!(
+        attachment_details(&db, forwarded_attachment)
+            .await
+            .unwrap()
+            .unwrap()
+            .message_id,
+        forwarded_id
+    );
+    assert_eq!(
+        persist_document(&db, ChatProvider::Telegram, forwarded_id, &document)
+            .await
+            .unwrap(),
+        forwarded_attachment
+    );
+
     save_attachment_original(&db, telegram_attachment, "content-hash", b"data")
         .await
         .unwrap();

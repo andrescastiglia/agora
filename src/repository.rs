@@ -211,7 +211,7 @@ pub async fn persist_document(
             provider, message_id, provider_media_id, filename, mime_type, provider_sha256, caption
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (provider, provider_media_id) DO UPDATE
+        ON CONFLICT (provider, message_id, provider_media_id) DO UPDATE
         SET filename = EXCLUDED.filename,
             mime_type = EXCLUDED.mime_type,
             provider_sha256 = EXCLUDED.provider_sha256,

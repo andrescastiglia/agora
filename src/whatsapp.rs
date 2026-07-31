@@ -620,6 +620,7 @@ mod tests {
             Some("application/octet-stream")
         ));
         assert!(!supported_document(Some("informe.pdf"), Some("image/png")));
+        assert!(!supported_document(None, Some("application/pdf")));
     }
 
     #[test]
