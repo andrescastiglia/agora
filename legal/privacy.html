@@ -8,16 +8,16 @@
 <body>
   <main>
     <h1>Política de privacidad de Agora</h1>
-    <p>Última actualización: 31 de julio de 2026.</p>
+    <p>Última actualización: 1 de septiembre de 2026.</p>
     <p>Agora es un asistente privado para un espacio cerrado que puede operar mediante Telegram o WhatsApp en Argentina. Sólo uno de esos proveedores está activo en cada momento. El responsable del tratamiento es Andres Castiglia y puede ser contactado en <a href="mailto:acastiglia@gmail.com">acastiglia@gmail.com</a>.</p>
     <h2>Datos tratados</h2>
     <p>Agora recibe mensajes, identificadores de Telegram o WhatsApp, nombres visibles, documentos admitidos y metadatos técnicos enviados al grupo configurado del proveedor activo. No importa conversaciones históricas ni acepta conversaciones individuales.</p>
     <h2>Finalidad y proveedores</h2>
     <p>Los datos se utilizan para indexar el conocimiento compartido y responder preguntas formuladas al bot. El contenido necesario se transmite a OpenAI para embeddings y generación de respuestas. Telegram procesa la mensajería mediante Bot API cuando ese proveedor está activo; Meta la procesa mediante WhatsApp Business Platform cuando WhatsApp está activo. Los datos de Agora se alojan en infraestructura administrada por el responsable.</p>
     <h2>Base y conservación</h2>
-    <p>El tratamiento se realiza con el consentimiento informado de los participantes. Los mensajes, textos extraídos, metadatos y archivos originales se conservan mientras la comunidad use Agora o hasta que corresponda eliminarlos. Los originales se almacenan como binarios en PostgreSQL, dentro de la infraestructura administrada por el responsable. Las copias locales temporales utilizadas durante la extracción se eliminan al finalizar el procesamiento, incluso ante errores.</p>
+    <p>El tratamiento se realiza con el consentimiento informado de los participantes. Los mensajes, textos extraídos, metadatos y archivos originales se conservan mientras la comunidad use Agora o hasta que corresponda eliminarlos. Los originales se almacenan como binarios en PostgreSQL, dentro de la infraestructura administrada por el responsable. El payload original de cada webhook se conserva únicamente hasta completar o descartar su procesamiento; después sólo permanecen el proveedor, el identificador externo y un hash para deduplicación. Las copias locales temporales utilizadas durante la extracción se eliminan al finalizar el procesamiento, incluso ante errores.</p>
     <h2>Derechos</h2>
-    <p>Los participantes pueden solicitar acceso, corrección, exportación o eliminación escribiendo al contacto indicado. La solicitud se verificará y responderá conforme a la Ley 25.326 de Protección de los Datos Personales de Argentina.</p>
+    <p>Los participantes pueden solicitar acceso, corrección, exportación o eliminación escribiendo al contacto indicado. La solicitud se verificará y responderá conforme a la Ley 25.326 de Protección de los Datos Personales de Argentina. Una eliminación alcanza mensajes, documentos, índices, trabajos y respuestas asociados; también reemplaza el conjunto de backups para evitar restaurar datos eliminados.</p>
     <h2>Seguridad y cambios</h2>
     <p>Agora autentica ambos webhooks, procesa sólo el proveedor seleccionado, limita el acceso al grupo y participantes autorizados y protege sus secretos fuera del código fuente. Los cambios materiales de esta política serán comunicados a los participantes.</p>
   </main>

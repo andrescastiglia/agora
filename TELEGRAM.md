@@ -1,4 +1,9 @@
-# Plan de convivencia entre Telegram y WhatsApp
+# Diseño implementado de convivencia entre Telegram y WhatsApp
+
+Estado: diseño e implementación completados el 31 de julio de 2026. Este
+documento se conserva como registro histórico y criterio de aceptación; las
+instrucciones operativas vigentes están en `README.md`. Los pasos redactados en
+futuro no representan tareas pendientes.
 
 ## Objetivo
 
@@ -172,8 +177,8 @@ Reglas de configuración:
   defecto.
 - Si falta configuración obligatoria del proveedor seleccionado, el proceso no
   inicia.
-- Las credenciales del proveedor inactivo pueden faltar en desarrollo.
-- En producción se cargarán ambos bloques para que baste con cambiar
+- Las credenciales del proveedor inactivo pueden faltar en el entorno local.
+- En `oracle` se cargarán ambos bloques para que baste con cambiar
   `CHAT_PROVIDER`.
 - `ALLOWED_WHATSAPP_IDS` se conservará temporalmente como alias obsoleto de
   `WHATSAPP_ALLOWED_USER_IDS` para no romper el despliegue actual.
@@ -274,7 +279,7 @@ Si cambia el despliegue, validar también:
 
 ```bash
 AGORA_ENV_FILE=.env.example AGORA_IMAGE=agora:test \
-  docker compose -f compose.production.yml config
+  docker compose -f compose.oracle.yml config
 ```
 
 ## 8. Aprovisionamiento y despliegue
@@ -313,7 +318,7 @@ AGORA_ENV_FILE=.env.example AGORA_IMAGE=agora:test \
 - Aislamiento de grupo y participantes probado.
 - Suite completa y cobertura obligatoria en verde.
 
-### Etapa C: producción
+### Etapa C: oracle
 
 - Bot y grupo creados.
 - Secretos cargados fuera de Git.

@@ -1,6 +1,6 @@
 # Decisiones de Agora
 
-Última actualización: 31 de julio de 2026.
+Última actualización: 1 de septiembre de 2026.
 
 Este documento es autoritativo para la versión 1 y prevalece sobre propuestas
 anteriores del roadmap.
@@ -23,6 +23,9 @@ anteriores del roadmap.
 - Volumen esperado: bajo.
 - Los mensajes, texto extraído y archivos originales se conservan mientras el
   proyecto esté activo o hasta una solicitud válida de eliminación.
+- El payload original del webhook se conserva sólo hasta terminar o descartar
+  el evento; después quedan únicamente proveedor, ID externo y hash para
+  deduplicación.
 
 ## Proveedores de chat
 
@@ -35,6 +38,11 @@ anteriores del roadmap.
 - Telegram admite grupos y supergrupos, usa secreto de webhook, limita descargas
   a 20 MiB, responde con `sendMessage` y no posee estados delivered/read.
 - WhatsApp conserva su HMAC, límite de 25 MiB y estados sent/delivered/read.
+- Cada respuesta tiene un único intento automático. Una respuesta de red
+  ambigua queda como `delivery_unknown` y requiere revisión manual; nunca se
+  reenvía automáticamente.
+- Los estados salientes son monótonos: `sent`, `delivered` y `read` no pueden
+  retroceder por eventos atrasados, iguales o sin timestamp.
 - La búsqueda RAG se aísla por espacio lógico, no por grupo técnico, para
   mantener continuidad al alternar plataformas.
 
@@ -72,7 +80,9 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   quedó registrado en Cloud API: el nombre figura `Approved`, WhatsApp Manager
   muestra `Connected` y Graph API informa throughput `STANDARD`. El intento
   real de crear el grupo volvió a devolver `131215` el 30/07/2026 porque el
-  número todavía no es elegible para Groups API.
+  número todavía no es elegible para Groups API. La auditoría del 01/09/2026
+  confirmó `account_review_status=APPROVED`, pero
+  `official_business_account=null` y ningún grupo configurado.
 - El perfil empresarial enlaza directamente a `/privacy` y `/terms`; se retiró
   la URL raíz porque devuelve `404` y podía perjudicar la validación externa
   del nombre comercial.
@@ -94,14 +104,14 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   `Resolved` y WhatsApp Manager muestra el nombre `Approved` al 29/07/2026.
   La solicitud OBA sigue deshabilitada y el panel pide volver a intentar más
   adelante.
-- Meta no entrega webhooks productivos mientras la app permanece sin publicar.
-  Por eso la publicación debe ocurrir después de la elegibilidad y la revisión
-  legal, pero antes de ejecutar el piloto real.
+- La app figura publicada (`Live`) al 01/09/2026. Esto no sustituye App Review:
+  los permisos de WhatsApp continúan sólo en estado `Ready for testing`.
 - App Review está iniciado con sólo `whatsapp_business_messaging` y
   `whatsapp_business_management`; `public_profile` se retiró porque Agora no lo
   utiliza. Las descripciones y el formulario de tratamiento de datos quedaron
   preparados; el borrador figura `Not submitted` el 30/07/2026 y faltan el
-  screencast y las llamadas reales dependientes del grupo.
+  screencast y las llamadas reales dependientes del grupo. Al 01/09/2026 ambos
+  permisos siguen sin acceso avanzado.
 - Agora es un RAG de dominio limitado al conocimiento del grupo, no un asistente
   general abierto. La revisión legal previa al piloto debe confirmar que esta
   caracterización cumple las condiciones vigentes de Meta para servicios de IA.
@@ -123,10 +133,10 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 
 - Repositorio: `andrescastiglia/agora`, público.
 - Imagen GHCR pública.
-- `main` cambia mediante PR y checks obligatorios.
-- No se exige aprobación humana del PR.
-- Cada merge a `main` despliega inmediatamente en el environment `oracle`, sin
-  aprobación manual.
+- `main` es la única rama local y remota; Dependabot no crea ramas automáticas.
+- Cada push a `main` ejecuta CI y no produce un despliegue.
+- Un tag exacto `vX.X.X` sobre el último commit de `main` valida nuevamente el
+  release y despliega en el único environment `oracle`.
 - El deploy usa el digest inmutable ARM64/AMD64, readiness y rollback automático.
 
 ## Proveedores
@@ -140,6 +150,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   su hash SHA-256.
 - Los backups de PostgreSQL incluyen también los documentos originales, por lo
   que crecerán con el volumen documental.
+- Una eliminación válida genera un backup limpio y destruye las copias cifradas
+  anteriores para no reintroducir los datos eliminados durante una restauración.
 - No se contrata un servicio externo de alertas.
 - Telegram y Meta son procesadores posibles de mensajería; sólo el seleccionado
   recibe y envía contenido de Agora en una instancia determinada.
@@ -155,8 +167,9 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - Telegram o Meta reciben la mensajería según el proveedor activo y OpenAI
   recibe el contenido necesario para embeddings y respuestas.
 - Existen avisos públicos en `/privacy`, `/terms` y `/data-deletion`.
-- Las solicitudes de acceso, exportación o eliminación se reciben por correo y
-  requieren verificación de identidad.
+- Las solicitudes de acceso, corrección, exportación o eliminación se reciben
+  por correo, requieren verificación de identidad y se ejecutan mediante el
+  procedimiento auditable de `DATA_RIGHTS.md`.
 
 ## Pendientes que no pueden inventarse
 

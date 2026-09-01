@@ -14,10 +14,12 @@ use crate::{
     document,
     openai::OpenAiClient,
     repository::{
-        apply_outgoing_status, attachment_details, claim_job, claim_webhook_event, complete_job,
-        complete_webhook_event, create_outgoing_message, enqueue_job, fail_job, fail_webhook_event,
-        mark_outgoing_sent, message_text, persist_document, persist_message, replace_chunks,
-        save_attachment_original, save_extracted_text, search_space,
+        apply_outgoing_status, attachment_details, claim_job, claim_webhook_event,
+        complete_document_indexing, complete_job, complete_webhook_event, create_outgoing_message,
+        enqueue_job, fail_job, fail_webhook_event, mark_outgoing_delivery_unknown,
+        mark_outgoing_sending, mark_outgoing_sent, message_attachments_completed,
+        message_has_attachment, message_text, persist_document, persist_message, replace_chunks,
+        save_attachment_original, search_space,
     },
     security::sha256_hex,
     text::{chunks, source_context},
@@ -91,42 +93,18 @@ async fn process_event(
         }
 
         let (message_id, _) = persist_message(db, &message).await?;
-        if let Some(text) = message.effective_text() {
-            enqueue_job(
-                db,
-                provider,
-                "embed_message",
-                &message.external_message_id,
-                json!({"message_id": message_id}),
-            )
-            .await?;
-
-            if let Some(question) = question_for_bot(provider, text, config) {
-                enqueue_job(
-                    db,
-                    provider,
-                    "answer_question",
-                    &message.external_message_id,
-                    json!({
-                        "message_id": message_id,
-                        "conversation_id": message.conversation_id,
-                        "space_id": message.space_id,
-                        "sender_id": message.sender_id,
-                        "reply_to_message_id": message.external_message_id,
-                        "question": question,
-                    }),
-                )
-                .await?;
-            }
-        }
-
+        let question = message
+            .effective_text()
+            .and_then(|text| question_for_bot(provider, text, config));
+        let mut document_enqueued = false;
         if let Some(document) = message.document.as_ref() {
             let maximum = provider_document_limit(config, provider);
             if document.file_size.is_some_and(|size| size > maximum) {
                 tracing::warn!(provider = %provider, "ignored document above provider limit");
-                continue;
-            }
-            if supported_document(document.filename.as_deref(), document.mime_type.as_deref()) {
+            } else if supported_document(
+                document.filename.as_deref(),
+                document.mime_type.as_deref(),
+            ) {
                 let attachment_id = persist_document(db, provider, message_id, document).await?;
                 enqueue_job(
                     db,
@@ -139,9 +117,39 @@ async fn process_event(
                     }),
                 )
                 .await?;
+                document_enqueued = true;
             } else {
                 tracing::warn!(provider = %provider, "ignored unsupported document");
             }
+        }
+
+        if !document_enqueued && message.effective_text().is_some() {
+            enqueue_job(
+                db,
+                provider,
+                "embed_message",
+                &message.external_message_id,
+                json!({"message_id": message_id}),
+            )
+            .await?;
+        }
+
+        if let Some(question) = question {
+            enqueue_job(
+                db,
+                provider,
+                "answer_question",
+                &message.external_message_id,
+                json!({
+                    "message_id": message_id,
+                    "conversation_id": message.conversation_id,
+                    "space_id": message.space_id,
+                    "sender_id": message.sender_id,
+                    "reply_to_message_id": message.external_message_id,
+                    "question": question,
+                }),
+            )
+            .await?;
         }
     }
     Ok(())
@@ -191,6 +199,9 @@ async fn embed_message(
     config: &Config,
     message_id: Uuid,
 ) -> Result<(), anyhow::Error> {
+    if message_has_attachment(db, message_id).await? {
+        return Ok(());
+    }
     let text = message_text(db, message_id)
         .await?
         .context("message has no text to embed")?;
@@ -203,14 +214,22 @@ async fn embed_content(
     message_id: Uuid,
     content: &str,
 ) -> Result<(), anyhow::Error> {
+    let (embedded, embedding_model) = generate_embeddings(config, content).await?;
+    replace_chunks(db, message_id, &embedded, &embedding_model).await?;
+    Ok(())
+}
+
+async fn generate_embeddings(
+    config: &Config,
+    content: &str,
+) -> Result<(Vec<(String, Vec<f32>)>, String), anyhow::Error> {
     let openai = OpenAiClient::from_config(config)?;
     let mut embedded = Vec::new();
     for chunk in chunks(content, 1_200, 150) {
         let embedding = openai.embedding(&chunk).await?;
         embedded.push((chunk, embedding));
     }
-    replace_chunks(db, message_id, &embedded, openai.embedding_model()).await?;
-    Ok(())
+    Ok((embedded, openai.embedding_model().to_owned()))
 }
 
 async fn process_document(
@@ -242,8 +261,22 @@ async fn process_document(
         downloaded.bytes
     };
     let text = document::extract(&bytes, &filename).await?;
-    save_extracted_text(db, attachment_id, &text).await?;
-    embed_content(db, config, attachment.message_id, &text).await
+    let indexed_text = attachment
+        .caption
+        .as_deref()
+        .filter(|caption| !caption.trim().is_empty())
+        .map_or_else(|| text.clone(), |caption| format!("{caption}\n\n{text}"));
+    let (embedded, embedding_model) = generate_embeddings(config, &indexed_text).await?;
+    complete_document_indexing(
+        db,
+        attachment_id,
+        attachment.message_id,
+        &text,
+        &embedded,
+        &embedding_model,
+    )
+    .await?;
+    Ok(())
 }
 
 async fn answer_question(
@@ -253,6 +286,9 @@ async fn answer_question(
     payload: &serde_json::Value,
 ) -> Result<(), anyhow::Error> {
     let source_message_id = uuid(payload, "message_id")?;
+    if !message_attachments_completed(db, source_message_id).await? {
+        anyhow::bail!("source document indexing is not complete");
+    }
     let conversation_id = string(payload, "conversation_id")?;
     let space_id = string(payload, "space_id")?;
     let sender_id = string(payload, "sender_id")?;
@@ -283,19 +319,29 @@ async fn answer_question(
     let answer = truncate(&answer, provider.message_limit());
     let (outgoing_id, status, provider_message_id) =
         create_outgoing_message(db, provider, source_message_id, conversation_id, &answer).await?;
-    if outgoing_already_sent(&status, provider_message_id.as_deref()) {
+    if outgoing_should_not_send(&status, provider_message_id.as_deref()) {
         return Ok(());
     }
     let client = ProviderClient::from_config(provider, config)?;
-    let sent = client
+    if !mark_outgoing_sending(db, outgoing_id).await? {
+        return Ok(());
+    }
+    let sent = match client
         .send_text(conversation_id, &answer, Some(reply_to_message_id))
-        .await?;
+        .await
+    {
+        Ok(sent) => sent,
+        Err(error) => {
+            mark_outgoing_delivery_unknown(db, outgoing_id, &error.to_string()).await?;
+            return Err(error);
+        }
+    };
     mark_outgoing_sent(db, outgoing_id, &sent.external_message_id).await?;
     Ok(())
 }
 
-fn outgoing_already_sent(status: &str, provider_message_id: Option<&str>) -> bool {
-    provider_message_id.is_some() || matches!(status, "sent" | "delivered" | "read")
+fn outgoing_should_not_send(status: &str, provider_message_id: Option<&str>) -> bool {
+    provider_message_id.is_some() || status != "pending"
 }
 
 fn provider(value: &str) -> Result<ChatProvider, anyhow::Error> {
@@ -397,6 +443,25 @@ mod tests {
         })
     }
 
+    fn telegram_document(update_id: i64) -> serde_json::Value {
+        json!({
+            "update_id": update_id,
+            "message": {
+                "message_id": update_id,
+                "date": 1700000000,
+                "chat": {"id": -1001, "type": "supergroup"},
+                "from": {"id": 42, "first_name": "Ana"},
+                "caption": "/agora pregunta",
+                "document": {
+                    "file_id": format!("file-{update_id}"),
+                    "file_name": "informe.pdf",
+                    "mime_type": "application/pdf",
+                    "file_size": 1024
+                }
+            }
+        })
+    }
+
     #[test]
     fn parses_job_fields_providers_limits_and_sent_states() {
         let id = Uuid::new_v4();
@@ -409,9 +474,10 @@ mod tests {
             provider_document_limit(&worker_config("telegram"), ChatProvider::Telegram),
             TELEGRAM_MAX_DOCUMENT_BYTES
         );
-        assert!(outgoing_already_sent("pending", Some("1")));
-        assert!(outgoing_already_sent("delivered", None));
-        assert!(!outgoing_already_sent("pending", None));
+        assert!(outgoing_should_not_send("pending", Some("1")));
+        assert!(outgoing_should_not_send("delivery_unknown", None));
+        assert!(outgoing_should_not_send("delivered", None));
+        assert!(!outgoing_should_not_send("pending", None));
         assert_eq!(truncate("áéíóú", 4), "áéí…");
     }
 
@@ -546,5 +612,33 @@ mod tests {
         .unwrap();
         assert_eq!(telegram_messages, 1);
         assert_eq!(telegram_jobs, 2);
+
+        let document_update_id = 9_000_001;
+        process_event(
+            &db,
+            &telegram_config,
+            ChatProvider::Telegram,
+            &telegram_document(document_update_id),
+        )
+        .await
+        .unwrap();
+        let document_message_id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM messages WHERE provider = 'telegram' AND external_message_id = $1",
+        )
+        .bind(document_update_id.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        let document_jobs: Vec<String> = sqlx::query_scalar(
+            "SELECT job_type FROM jobs WHERE provider = 'telegram' AND payload->>'message_id' = $1 ORDER BY created_at, id",
+        )
+        .bind(document_message_id.to_string())
+        .fetch_all(&db)
+        .await
+        .unwrap();
+        assert_eq!(document_jobs, ["process_document", "answer_question"]);
+        embed_message(&db, &telegram_config, document_message_id)
+            .await
+            .unwrap();
     }
 }

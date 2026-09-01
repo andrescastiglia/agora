@@ -31,6 +31,8 @@ Ambos webhooks permanecen publicados. Cada solicitud se autentica antes de ser
 parseada; si pertenece al proveedor inactivo responde `200` sin persistirse. El
 worker reclama exclusivamente eventos y jobs del proveedor activo. Cambiar de
 proveedor congela el trabajo pendiente anterior y lo continúa al volver.
+El payload original se minimiza al completar o descartar definitivamente el
+evento; el proveedor, su ID externo y el hash permanecen para deduplicación.
 
 Contenido admitido:
 
@@ -59,7 +61,8 @@ cargo run
 
 Completá `DATABASE_URL`, `KNOWLEDGE_SPACE_ID` y todo el bloque del proveedor
 seleccionado. Las credenciales del proveedor inactivo pueden quedar vacías en
-desarrollo. En producción se cargan ambos bloques para que el único cambio sea:
+el entorno local. En `oracle` se cargan ambos bloques para que el único cambio
+sea:
 
 ```env
 CHAT_PROVIDER=telegram
@@ -71,7 +74,7 @@ CHAT_PROVIDER=telegram
 | Método | Ruta | Finalidad |
 | --- | --- | --- |
 | `GET` | `/health` | Proceso activo |
-| `GET` | `/ready` | PostgreSQL y configuración activa completos |
+| `GET` | `/ready` | PostgreSQL y configuración del proveedor y OpenAI completas |
 | `POST` | `/webhooks/telegram` | Updates autenticados de Telegram |
 | `GET` | `/webhooks/whatsapp` | Challenge de Meta |
 | `POST` | `/webhooks/whatsapp` | Eventos firmados de WhatsApp |
@@ -131,11 +134,32 @@ TEST_DATABASE_URL=postgres://agora:agora@localhost:5432/agora \
 Las pruebas usan servidores HTTP locales y PostgreSQL/pgvector; no llaman a
 Telegram, Meta ni OpenAI reales.
 
-## Producción
+Para una base que tenga aplicada `0007` pero no `0008`, ejecutar antes del
+despliegue el preflight documentado en
+[`scripts/preflight-chat-provider-migration.sql`](scripts/preflight-chat-provider-migration.sql).
+Normaliza estados nulos permitidos por el esquema anterior; la suite prueba la
+cadena completa hasta `0012`.
 
-Cada merge a `main` publica imágenes ARM64/AMD64 por digest y despliega en
-`oracle` con readiness y rollback. Nginx publica únicamente `80/443`; Agora y
+## Oracle
+
+`main` es la única rama del repositorio. Cada push ejecuta CI, pero no despliega.
+El único despliegue se inicia al crear sobre el último commit de `main` un tag
+con formato exacto `vX.X.X` y publicarlo en GitHub:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+El workflow vuelve a ejecutar formato, Clippy y pruebas, publica la imagen
+ARM64/AMD64 con el tag de versión y despliega su digest en el único environment
+`oracle`, con readiness y rollback. Nginx publica únicamente `80/443`; Agora y
 PostgreSQL escuchan en loopback.
+
+Cada respuesta saliente realiza un solo intento automático. Si el proveedor
+acepta la solicitud pero la confirmación de red es ambigua, queda en
+`delivery_unknown` para revisión manual y no se reenvía automáticamente. Los
+estados confirmados avanzan de forma monótona.
 
 El código soporta ambos proveedores. La habilitación real de Telegram requiere
 crear el bot y grupo, desactivar Privacy Mode o hacerlo administrador, registrar
@@ -153,3 +177,10 @@ sudo -u deploy /opt/agora/configure-telegram-webhook.sh --check /etc/agora/agora
 
 El primer comando configura la URL exacta y los tipos de update admitidos; el
 segundo sólo comprueba que Telegram sigue apuntando al endpoint esperado.
+
+## Derechos de las personas
+
+El procedimiento operativo de acceso, corrección, exportación y eliminación,
+incluido el tratamiento de backups, está en [DATA_RIGHTS.md](DATA_RIGHTS.md).
+Los scripts se despliegan en `/opt/agora` y requieren identidad verificada y
+ejecución explícita como `root`.

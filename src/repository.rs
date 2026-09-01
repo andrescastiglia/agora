@@ -65,6 +65,7 @@ pub async fn claim_webhook_event(
             UPDATE webhook_events
             SET processing_status = 'dead',
                 locked_at = NULL,
+                payload = '{}'::jsonb,
                 last_error = COALESCE(
                     last_error,
                     'worker stopped during the final processing attempt'
@@ -109,7 +110,8 @@ pub async fn complete_webhook_event(db: &PgPool, id: Uuid) -> Result<(), sqlx::E
         UPDATE webhook_events
         SET processing_status = 'completed',
             processed_at = now(),
-            locked_at = NULL
+            locked_at = NULL,
+            payload = '{}'::jsonb
         WHERE id = $1
         "#,
     )
@@ -126,7 +128,8 @@ pub async fn fail_webhook_event(db: &PgPool, id: Uuid, error: &str) -> Result<()
         SET processing_status = CASE WHEN attempts >= 8 THEN 'dead' ELSE 'pending' END,
             next_attempt_at = now() + make_interval(secs => LEAST(300, power(2, attempts)::integer)),
             last_error = left($2, 1000),
-            locked_at = NULL
+            locked_at = NULL,
+            payload = CASE WHEN attempts >= 8 THEN '{}'::jsonb ELSE payload END
         WHERE id = $1
         "#,
     )
@@ -350,6 +353,7 @@ pub struct AttachmentDetails {
     pub message_id: Uuid,
     pub provider_media_id: String,
     pub filename: Option<String>,
+    pub caption: Option<String>,
     pub original_data: Option<Vec<u8>>,
 }
 
@@ -359,7 +363,7 @@ pub async fn attachment_details(
 ) -> Result<Option<AttachmentDetails>, sqlx::Error> {
     sqlx::query_as(
         r#"
-        SELECT provider, message_id, provider_media_id, filename, original_data
+        SELECT provider, message_id, provider_media_id, filename, caption, original_data
         FROM attachments
         WHERE id = $1
         "#,
@@ -369,12 +373,67 @@ pub async fn attachment_details(
     .await
 }
 
-pub async fn save_extracted_text(
+pub async fn message_has_attachment(db: &PgPool, message_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attachments WHERE message_id = $1)")
+        .bind(message_id)
+        .fetch_one(db)
+        .await
+}
+
+pub async fn message_attachments_completed(
+    db: &PgPool,
+    message_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        SELECT NOT EXISTS(
+            SELECT 1
+            FROM attachments
+            WHERE message_id = $1 AND processing_status <> 'completed'
+        )
+        "#,
+    )
+    .bind(message_id)
+    .fetch_one(db)
+    .await
+}
+
+pub async fn complete_document_indexing(
     db: &PgPool,
     attachment_id: Uuid,
+    message_id: Uuid,
     text: &str,
+    chunks: &[(String, Vec<f32>)],
+    embedding_model: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    let mut transaction = db.begin().await?;
+    sqlx::query("DELETE FROM document_chunks WHERE message_id = $1")
+        .bind(message_id)
+        .execute(&mut *transaction)
+        .await?;
+    for (index, (content, embedding)) in chunks.iter().enumerate() {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO document_chunks (
+                message_id, group_id, space_id, chunk_index, content, embedding, embedding_model
+            )
+            SELECT $1, m.conversation_id, m.space_id, $2, $3, $4, $5
+            FROM messages m
+            WHERE m.id = $1
+            "#,
+        )
+        .bind(message_id)
+        .bind(index as i32)
+        .bind(content)
+        .bind(pgvector::Vector::from(embedding.clone()))
+        .bind(embedding_model)
+        .execute(&mut *transaction)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+    }
+    let result = sqlx::query(
         r#"
         UPDATE attachments
         SET extracted_text = $2,
@@ -386,8 +445,12 @@ pub async fn save_extracted_text(
     )
     .bind(attachment_id)
     .bind(text)
-    .execute(db)
+    .execute(&mut *transaction)
     .await?;
+    if result.rows_affected() != 1 {
+        return Err(sqlx::Error::RowNotFound);
+    }
+    transaction.commit().await?;
     Ok(())
 }
 
@@ -530,7 +593,7 @@ pub async fn create_outgoing_message(
         INSERT INTO outgoing_messages (provider, source_message_id, group_id, body)
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (source_message_id) WHERE source_message_id IS NOT NULL
-        DO UPDATE SET body = EXCLUDED.body
+        DO UPDATE SET body = outgoing_messages.body
         WHERE outgoing_messages.provider = EXCLUDED.provider
         RETURNING id, status, provider_message_id
         "#,
@@ -543,6 +606,39 @@ pub async fn create_outgoing_message(
     .await
 }
 
+pub async fn mark_outgoing_sending(db: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE outgoing_messages
+        SET status = 'sending', delivery_attempted_at = now(), last_error = NULL
+        WHERE id = $1 AND status = 'pending'
+        "#,
+    )
+    .bind(id)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn mark_outgoing_delivery_unknown(
+    db: &PgPool,
+    id: Uuid,
+    error: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE outgoing_messages
+        SET status = 'delivery_unknown', last_error = left($2, 1000)
+        WHERE id = $1 AND status = 'sending'
+        "#,
+    )
+    .bind(id)
+    .bind(error)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
 pub async fn mark_outgoing_sent(
     db: &PgPool,
     id: Uuid,
@@ -551,8 +647,11 @@ pub async fn mark_outgoing_sent(
     sqlx::query(
         r#"
         UPDATE outgoing_messages
-        SET provider_message_id = $2, status = 'sent', sent_at = now()
-        WHERE id = $1
+        SET provider_message_id = $2,
+            status = 'sent',
+            sent_at = now(),
+            last_error = NULL
+        WHERE id = $1 AND status = 'sending'
         "#,
     )
     .bind(id)
@@ -578,10 +677,50 @@ pub async fn apply_outgoing_status(
             provider_status_at = COALESCE($5, provider_status_at)
         WHERE provider = $1
           AND provider_message_id = $2
+          AND CASE $3
+              WHEN 'failed' THEN 1
+              WHEN 'sent' THEN 2
+              WHEN 'delivered' THEN 3
+              WHEN 'read' THEN 4
+              ELSE -1
+          END >= 0
           AND (
-              provider_status_at IS NULL
-              OR $5 IS NULL
-              OR provider_status_at <= $5
+              CASE $3
+                  WHEN 'failed' THEN 1
+                  WHEN 'sent' THEN 2
+                  WHEN 'delivered' THEN 3
+                  WHEN 'read' THEN 4
+                  ELSE -1
+              END > CASE status
+                  WHEN 'pending' THEN 0
+                  WHEN 'sending' THEN 1
+                  WHEN 'delivery_unknown' THEN 1
+                  WHEN 'failed' THEN 1
+                  WHEN 'sent' THEN 2
+                  WHEN 'delivered' THEN 3
+                  WHEN 'read' THEN 4
+                  ELSE -1
+              END
+              OR (
+                  CASE $3
+                      WHEN 'failed' THEN 1
+                      WHEN 'sent' THEN 2
+                      WHEN 'delivered' THEN 3
+                      WHEN 'read' THEN 4
+                      ELSE -1
+                  END = CASE status
+                      WHEN 'pending' THEN 0
+                      WHEN 'sending' THEN 1
+                      WHEN 'delivery_unknown' THEN 1
+                      WHEN 'failed' THEN 1
+                      WHEN 'sent' THEN 2
+                      WHEN 'delivered' THEN 3
+                      WHEN 'read' THEN 4
+                      ELSE -1
+                  END
+                  AND $5 IS NOT NULL
+                  AND (provider_status_at IS NULL OR provider_status_at < $5)
+              )
           )
         "#,
     )

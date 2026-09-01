@@ -8,7 +8,7 @@ fi
 
 readonly image="$1"
 readonly deploy_dir="${ORACLE_DEPLOY_PATH:-/opt/agora}"
-readonly compose_file="$deploy_dir/compose.production.yml"
+readonly compose_file="$deploy_dir/compose.oracle.yml"
 readonly current_file="$deploy_dir/.deployed-image"
 readonly lock_file="$deploy_dir/.deploy.lock"
 

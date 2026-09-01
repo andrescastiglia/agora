@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::chat::ChatProvider;
 
 pub const MAX_DOCUMENT_BYTES: u64 = 26_214_400;
+pub const MAX_WEBHOOK_BODY_BYTES: usize = 1_048_576;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret(String);
@@ -122,6 +123,14 @@ impl Config {
             .or_else(|| optional(&values, "ALLOWED_WHATSAPP_IDS"))
             .map(|value| parse_list(&value))
             .unwrap_or_default();
+        let webhook_max_body_bytes = parse("WEBHOOK_MAX_BODY_BYTES", "1048576")?;
+        if !(1..=MAX_WEBHOOK_BODY_BYTES).contains(&webhook_max_body_bytes) {
+            return Err(ConfigError::Invalid {
+                name: "WEBHOOK_MAX_BODY_BYTES",
+                message: format!("must be between 1 and {MAX_WEBHOOK_BODY_BYTES}"),
+            });
+        }
+
         let config = Self {
             database_url: Secret(required("DATABASE_URL")?),
             bind_addr,
@@ -160,7 +169,7 @@ impl Config {
                 .get("BOT_MENTION")
                 .cloned()
                 .unwrap_or_else(|| "@agora".into()),
-            webhook_max_body_bytes: parse("WEBHOOK_MAX_BODY_BYTES", "1048576")?,
+            webhook_max_body_bytes,
             document_max_bytes,
             worker_poll_interval: Duration::from_millis(poll_ms as u64),
         };
@@ -458,6 +467,8 @@ mod tests {
             ("WORKER_POLL_INTERVAL_MS", "0"),
             ("OPENAI_EMBEDDING_DIMENSIONS", "3072"),
             ("DOCUMENT_MAX_BYTES", "26214401"),
+            ("WEBHOOK_MAX_BODY_BYTES", "0"),
+            ("WEBHOOK_MAX_BODY_BYTES", "1048577"),
         ] {
             let mut values = telegram();
             values.insert(name.into(), invalid.into());

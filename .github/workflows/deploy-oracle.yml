@@ -1,20 +1,77 @@
-name: Deploy oracle
+name: Release oracle
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
 
 permissions:
   contents: read
 
 concurrency:
-  group: oracle-production
+  group: oracle
   cancel-in-progress: false
 
 jobs:
+  verify-release:
+    name: verify-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate tag and main commit
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must match vX.X.X" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          release_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$release_sha" != "$main_sha" ]; then
+            echo "Release tag must point to the current main commit" >&2
+            exit 1
+          fi
+
+  quality:
+    name: release-quality
+    needs: verify-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: agora_test
+          POSTGRES_USER: agora
+          POSTGRES_PASSWORD: agora
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agora -d agora_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://agora:agora@localhost:5432/agora_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Run tests
+        run: cargo test --workspace --all-features --all-targets --locked
+
   image:
     name: publish-image-${{ matrix.arch }}
+    needs: quality
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -115,12 +172,12 @@ jobs:
           done
 
           docker buildx imagetools create \
-            --tag "$IMAGE:$GITHUB_SHA" \
-            --tag "$IMAGE:main" \
+            --tag "$IMAGE:$GITHUB_REF_NAME" \
+            --tag "$IMAGE:latest" \
             "${sources[@]}"
 
           manifest="$(docker buildx imagetools inspect \
-            "$IMAGE:$GITHUB_SHA" --format '{{json .Manifest}}')"
+            "$IMAGE:$GITHUB_REF_NAME" --format '{{json .Manifest}}')"
           digest="$(jq -r '.digest' <<<"$manifest")"
           platforms="$(jq -r \
             '[.manifests[] | select(.platform.os == "linux") | .platform.architecture] |
@@ -170,8 +227,10 @@ jobs:
           chmod 0600 ~/.ssh/known_hosts
       - name: Upload deployment manifests
         run: |
-          scp -P "$ORACLE_PORT" compose.production.yml scripts/deploy-oracle.sh \
+          scp -P "$ORACLE_PORT" compose.oracle.yml scripts/deploy-oracle.sh \
             scripts/configure-telegram-webhook.sh \
+            scripts/export-participant-data.sh scripts/export-participant-data.sql \
+            scripts/delete-participant-data.sh scripts/delete-participant-data.sql \
             "$ORACLE_USER@$ORACLE_HOST:$ORACLE_DEPLOY_PATH/"
       - name: Authenticate oracle to GHCR for this deployment
         env:
@@ -184,7 +243,9 @@ jobs:
         run: |
           ssh -p "$ORACLE_PORT" "$ORACLE_USER@$ORACLE_HOST" \
             "chmod 0750 '$ORACLE_DEPLOY_PATH/deploy-oracle.sh' \
-              '$ORACLE_DEPLOY_PATH/configure-telegram-webhook.sh' && \
+              '$ORACLE_DEPLOY_PATH/configure-telegram-webhook.sh' \
+              '$ORACLE_DEPLOY_PATH/export-participant-data.sh' \
+              '$ORACLE_DEPLOY_PATH/delete-participant-data.sh' && \
              ORACLE_DEPLOY_PATH='$ORACLE_DEPLOY_PATH' \
              '$ORACLE_DEPLOY_PATH/deploy-oracle.sh' '$IMAGE'"
       - name: Verify public readiness
