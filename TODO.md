@@ -5,7 +5,7 @@
 ## Despliegue
 
 - [ ] Publicar el próximo tag `vX.X.X` sobre `main` y verificar en `oracle` la
-  migración `0011`, `/ready` y los procedimientos de derechos de datos.
+  migraciones `0011`–`0012`, `/ready` y los procedimientos de derechos de datos.
 
 ## Telegram
 

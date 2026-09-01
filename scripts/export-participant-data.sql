@@ -30,7 +30,17 @@ participant_outgoing AS MATERIALIZED (
     JOIN participant_messages m ON m.id = o.source_message_id
 ),
 participant_webhooks AS MATERIALIZED (
-    SELECT we.*
+    SELECT
+        we.*,
+        CASE
+            WHEN we.provider = 'whatsapp' THEN
+                agora_filter_whatsapp_participant_payload(
+                    we.payload,
+                    current_setting('agora.participant_id'),
+                    true
+                )
+            ELSE we.payload
+        END AS export_payload
     FROM webhook_events we
     WHERE we.provider = current_setting('agora.provider')
       AND (
@@ -40,13 +50,31 @@ participant_webhooks AS MATERIALIZED (
           )
           OR (
               we.provider = 'whatsapp'
-              AND EXISTS (
-                  SELECT 1
-                  FROM jsonb_path_query(
-                      we.payload,
-                      '$.entry[*].changes[*].value.messages[*]'
-                  ) message
-                  WHERE message->>'from' = current_setting('agora.participant_id')
+              AND (
+                  EXISTS (
+                      SELECT 1
+                      FROM jsonb_path_query(
+                          we.payload,
+                          '$.entry[*].changes[*].value.messages[*]'
+                      ) message
+                      WHERE message->>'from' = current_setting('agora.participant_id')
+                  )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM jsonb_path_query(
+                          we.payload,
+                          '$.entry[*].changes[*].value.contacts[*]'
+                      ) contact
+                      WHERE contact->>'wa_id' = current_setting('agora.participant_id')
+                  )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM jsonb_path_query(
+                          we.payload,
+                          '$.entry[*].changes[*].value.statuses[*]'
+                      ) status
+                      WHERE status->>'recipient_id' = current_setting('agora.participant_id')
+                  )
               )
           )
       )
@@ -79,6 +107,11 @@ SELECT jsonb_pretty(jsonb_build_object(
         SELECT jsonb_agg(to_jsonb(o) ORDER BY o.created_at) FROM participant_outgoing o
     ), '[]'::jsonb),
     'pending_webhook_events', COALESCE((
-        SELECT jsonb_agg(to_jsonb(we) ORDER BY we.received_at) FROM participant_webhooks we
+        SELECT jsonb_agg(
+            (to_jsonb(we) - 'payload' - 'export_payload') ||
+                jsonb_build_object('payload', we.export_payload)
+            ORDER BY we.received_at
+        )
+        FROM participant_webhooks we
     ), '[]'::jsonb)
 ));

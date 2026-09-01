@@ -35,9 +35,18 @@ WITH deleted AS (
 )
 INSERT INTO deletion_counts SELECT 'outgoing_messages', count(*) FROM deleted;
 
-WITH minimized AS (
-    UPDATE webhook_events we
-    SET payload = '{}'::jsonb
+WITH target_webhooks AS MATERIALIZED (
+    SELECT
+        we.id,
+        CASE
+            WHEN we.provider = 'telegram' THEN '{}'::jsonb
+            ELSE agora_filter_whatsapp_participant_payload(
+                we.payload,
+                current_setting('agora.participant_id'),
+                false
+            )
+        END AS filtered_payload
+    FROM webhook_events we
     WHERE we.provider = current_setting('agora.provider')
       AND (
           (
@@ -46,16 +55,51 @@ WITH minimized AS (
           )
           OR (
               we.provider = 'whatsapp'
-              AND EXISTS (
-                  SELECT 1
-                  FROM jsonb_path_query(
-                      we.payload,
-                      '$.entry[*].changes[*].value.messages[*]'
-                  ) message
-                  WHERE message->>'from' = current_setting('agora.participant_id')
+              AND (
+                  EXISTS (
+                      SELECT 1
+                      FROM jsonb_path_query(
+                          we.payload,
+                          '$.entry[*].changes[*].value.messages[*]'
+                      ) message
+                      WHERE message->>'from' = current_setting('agora.participant_id')
+                  )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM jsonb_path_query(
+                          we.payload,
+                          '$.entry[*].changes[*].value.contacts[*]'
+                      ) contact
+                      WHERE contact->>'wa_id' = current_setting('agora.participant_id')
+                  )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM jsonb_path_query(
+                          we.payload,
+                          '$.entry[*].changes[*].value.statuses[*]'
+                      ) status
+                      WHERE status->>'recipient_id' = current_setting('agora.participant_id')
+                  )
               )
           )
       )
+), minimized AS (
+    UPDATE webhook_events we
+    SET payload = CASE
+        WHEN jsonb_path_exists(
+            target_webhooks.filtered_payload,
+            '$.entry[*].changes[*].value.messages[*]'
+        ) OR jsonb_path_exists(
+            target_webhooks.filtered_payload,
+            '$.entry[*].changes[*].value.contacts[*]'
+        ) OR jsonb_path_exists(
+            target_webhooks.filtered_payload,
+            '$.entry[*].changes[*].value.statuses[*]'
+        ) THEN target_webhooks.filtered_payload
+        ELSE '{}'::jsonb
+    END
+    FROM target_webhooks
+    WHERE we.id = target_webhooks.id
     RETURNING 1
 )
 INSERT INTO deletion_counts SELECT 'webhook_payloads', count(*) FROM minimized;

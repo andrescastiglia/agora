@@ -796,6 +796,85 @@ async fn participant_export_and_deletion_cover_related_data() {
 }
 
 #[tokio::test]
+async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
+    let Some((db, _database_lock)) = database().await else {
+        eprintln!("TEST_DATABASE_URL is not set; data-rights integration test skipped");
+        return;
+    };
+    let payload = json!({
+        "entry": [{
+            "id": "waba",
+            "changes": [{
+                "field": "messages",
+                "value": {
+                    "metadata": {"phone_number_id": "phone"},
+                    "messages": [
+                        {"from": "target-wa", "id": "target-message", "text": {"body": "target secret"}},
+                        {"from": "other-wa", "id": "other-message", "text": {"body": "other secret"}}
+                    ],
+                    "contacts": [
+                        {"wa_id": "target-wa", "profile": {"name": "Target"}},
+                        {"wa_id": "other-wa", "profile": {"name": "Other"}}
+                    ],
+                    "statuses": [
+                        {"recipient_id": "target-wa", "id": "target-status"},
+                        {"recipient_id": "other-wa", "id": "other-status"}
+                    ]
+                }
+            }]
+        }]
+    });
+    persist_webhook_event(
+        &db,
+        ChatProvider::WhatsApp,
+        "mixed-privacy-event",
+        &payload,
+        "mixed-privacy-hash",
+    )
+    .await
+    .unwrap();
+
+    let mut connection = db.acquire().await.unwrap();
+    sqlx::raw_sql("SET agora.provider = 'whatsapp'; SET agora.participant_id = 'target-wa';")
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    let export: String = sqlx::query_scalar(include_str!("../scripts/export-participant-data.sql"))
+        .fetch_one(&mut *connection)
+        .await
+        .unwrap();
+    let export: serde_json::Value = serde_json::from_str(&export).unwrap();
+    let exported_payload = &export["pending_webhook_events"][0]["payload"];
+    let exported_payload = serde_json::to_string(exported_payload).unwrap();
+    assert!(exported_payload.contains("target-message"));
+    assert!(exported_payload.contains("target-status"));
+    assert!(exported_payload.contains("target-wa"));
+    assert!(!exported_payload.contains("other-message"));
+    assert!(!exported_payload.contains("other-status"));
+    assert!(!exported_payload.contains("other-wa"));
+
+    sqlx::raw_sql(include_str!("../scripts/delete-participant-data.sql"))
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    drop(connection);
+
+    let retained: serde_json::Value =
+        sqlx::query_scalar("SELECT payload FROM webhook_events WHERE provider_event_id = $1")
+            .bind("mixed-privacy-event")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let retained = serde_json::to_string(&retained).unwrap();
+    assert!(retained.contains("other-message"));
+    assert!(retained.contains("other-status"));
+    assert!(retained.contains("other-wa"));
+    assert!(!retained.contains("target-message"));
+    assert!(!retained.contains("target-status"));
+    assert!(!retained.contains("target-wa"));
+}
+
+#[tokio::test]
 async fn provider_migration_backfills_all_legacy_records_as_whatsapp() {
     let Ok(database_url) = env::var("TEST_DATABASE_URL") else {
         eprintln!("TEST_DATABASE_URL is not set; migration integration test skipped");
@@ -852,6 +931,7 @@ async fn provider_migration_backfills_all_legacy_records_as_whatsapp() {
         include_str!("../migrations/0009_chat_providers.sql"),
         include_str!("../migrations/0010_attachment_message_identity.sql"),
         include_str!("../migrations/0011_outgoing_delivery_attempt.sql"),
+        include_str!("../migrations/0012_filter_participant_webhook_payload.sql"),
     ] {
         sqlx::raw_sql(migration)
             .execute(&mut connection)
@@ -972,6 +1052,7 @@ async fn provider_migration_preflight_normalizes_legacy_edge_cases() {
         include_str!("../migrations/0009_chat_providers.sql"),
         include_str!("../migrations/0010_attachment_message_identity.sql"),
         include_str!("../migrations/0011_outgoing_delivery_attempt.sql"),
+        include_str!("../migrations/0012_filter_participant_webhook_payload.sql"),
     ] {
         sqlx::raw_sql(migration)
             .execute(&mut connection)

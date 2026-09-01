@@ -138,7 +138,7 @@ Para una base que tenga aplicada `0007` pero no `0008`, ejecutar antes del
 despliegue el preflight documentado en
 [`scripts/preflight-chat-provider-migration.sql`](scripts/preflight-chat-provider-migration.sql).
 Normaliza estados nulos permitidos por el esquema anterior; la suite prueba la
-cadena completa hasta `0011`.
+cadena completa hasta `0012`.
 
 ## Oracle
 
