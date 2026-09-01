@@ -12,6 +12,8 @@ readonly participant_id="$4"
 readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly database_name="${AGORA_DATABASE_NAME:-agora}"
 readonly audit_log="${AGORA_DELETION_AUDIT_LOG:-/var/log/agora-data-deletions.log}"
+readonly runtime_container="${AGORA_RUNTIME_CONTAINER:-agora-api}"
+readonly skip_runtime_quiesce="${AGORA_SKIP_RUNTIME_QUIESCE:-0}"
 
 if [[ $backup_mode != "--replace-backups" && $backup_mode != "--test-no-backups" ]]; then
   echo "backup mode must be --replace-backups or --test-no-backups" >&2
@@ -19,6 +21,10 @@ if [[ $backup_mode != "--replace-backups" && $backup_mode != "--test-no-backups"
 fi
 if [[ $backup_mode == "--test-no-backups" && ${AGORA_ALLOW_TEST_NO_BACKUPS:-0} != "1" ]]; then
   echo "--test-no-backups is allowed only with AGORA_ALLOW_TEST_NO_BACKUPS=1" >&2
+  exit 2
+fi
+if [[ $skip_runtime_quiesce == "1" && ${AGORA_ALLOW_TEST_NO_QUIESCE:-0} != "1" ]]; then
+  echo "AGORA_SKIP_RUNTIME_QUIESCE is allowed only with AGORA_ALLOW_TEST_NO_QUIESCE=1" >&2
   exit 2
 fi
 if [[ $provider != "telegram" && $provider != "whatsapp" ]]; then
@@ -43,6 +49,26 @@ if [[ $backup_mode == "--replace-backups" ]]; then
   readonly backup_command="${AGORA_BACKUP_COMMAND:-/usr/local/sbin/agora-backup-postgres}"
   test -d "$backup_dir"
   test -x "$backup_command"
+fi
+
+restart_runtime=0
+resume_runtime() {
+  if [[ $restart_runtime == "1" ]]; then
+    docker start "$runtime_container" >/dev/null ||
+      echo "CRITICAL: failed to restart $runtime_container" >&2
+  fi
+}
+
+if [[ $skip_runtime_quiesce != "1" ]]; then
+  runtime_running="$(docker inspect --format '{{.State.Running}}' "$runtime_container")"
+  if [[ $runtime_running == "true" ]]; then
+    docker stop "$runtime_container" >/dev/null
+    restart_runtime=1
+    trap resume_runtime EXIT
+  elif [[ $runtime_running != "false" ]]; then
+    echo "could not determine runtime state for $runtime_container" >&2
+    exit 1
+  fi
 fi
 
 if [[ -n ${AGORA_PSQL_DOCKER_SERVICE:-} ]]; then
@@ -95,6 +121,16 @@ if [[ $backup_mode == "--replace-backups" ]]; then
   write_audit "completed"
 else
   write_audit "not_requested"
+fi
+
+if [[ $restart_runtime == "1" ]]; then
+  if ! docker start "$runtime_container" >/dev/null; then
+    write_audit "runtime_restart_failed"
+    echo "failed to restart $runtime_container" >&2
+    exit 1
+  fi
+  restart_runtime=0
+  trap - EXIT
 fi
 
 echo "$summary"

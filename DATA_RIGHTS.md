@@ -36,6 +36,11 @@ de auditoría.
      --confirm --replace-backups telegram IDENTIFICADOR
    ```
 
+El comando detiene temporalmente `agora-api` antes de iniciar la transacción y
+lo reactiva sólo después de reemplazar los backups. Así ningún worker puede
+reinsertar datos reclamados previamente; los proveedores reintentarán los
+webhooks que lleguen durante esa pausa.
+
 La operación elimina mensajes, adjuntos, chunks, jobs y respuestas asociados;
 minimiza payloads de webhooks todavía pendientes; genera un backup nuevo y
 destruye los backups cifrados anteriores. El log
