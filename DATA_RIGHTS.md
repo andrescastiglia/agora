@@ -40,7 +40,10 @@ La operación elimina mensajes, adjuntos, chunks, jobs y respuestas asociados;
 minimiza payloads de webhooks todavía pendientes; genera un backup nuevo y
 destruye los backups cifrados anteriores. El log
 `/var/log/agora-data-deletions.log` conserva fecha, proveedor y conteos por tipo
-de objeto, pero ningún identificador ni derivación del identificador.
+de objeto, pero ningún identificador ni derivación del identificador. También
+registra el reemplazo de backups como `pending`, `failed` o `completed`. Ante un
+fallo, repetir exactamente el mismo comando completa la limpieza de backups de
+forma segura aunque los registros principales ya no existan.
 
 ## Restauraciones
 

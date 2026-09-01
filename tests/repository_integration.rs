@@ -847,6 +847,30 @@ async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
     )
     .await
     .unwrap();
+    let group_payload = json!({
+        "object": "whatsapp_business_account",
+        "entry": [{
+            "id": "waba",
+            "changes": [{
+                "field": "group_participants_update",
+                "value": {
+                    "groups": [{
+                        "type": "participants_update",
+                        "participants": ["target-wa", "other-wa"]
+                    }]
+                }
+            }]
+        }]
+    });
+    persist_webhook_event(
+        &db,
+        ChatProvider::WhatsApp,
+        "group-privacy-event",
+        &group_payload,
+        "group-privacy-hash",
+    )
+    .await
+    .unwrap();
 
     let mut connection = db.acquire().await.unwrap();
     sqlx::raw_sql("SET agora.provider = 'whatsapp'; SET agora.participant_id = 'target-wa';")
@@ -858,7 +882,13 @@ async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
         .await
         .unwrap();
     let export: serde_json::Value = serde_json::from_str(&export).unwrap();
-    let exported_payload = &export["pending_webhook_events"][0]["payload"];
+    let exported_events = export["pending_webhook_events"].as_array().unwrap();
+    assert_eq!(exported_events.len(), 2);
+    let exported_event = exported_events
+        .iter()
+        .find(|event| event["provider_event_id"] == "mixed-privacy-event")
+        .unwrap();
+    let exported_payload = &exported_event["payload"];
     let exported_payload = serde_json::to_string(exported_payload).unwrap();
     assert!(exported_payload.contains("target-message"));
     assert!(exported_payload.contains("target-status"));
@@ -869,6 +899,15 @@ async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
     assert!(!exported_payload.contains("other-wa"));
     assert!(!exported_payload.contains("groups"));
     assert!(!exported_payload.contains("future_identity_field"));
+    let group_export = exported_events
+        .iter()
+        .find(|event| event["provider_event_id"] == "group-privacy-event")
+        .unwrap();
+    assert!(
+        !serde_json::to_string(&group_export["payload"])
+            .unwrap()
+            .contains("target-wa")
+    );
 
     sqlx::raw_sql(include_str!("../scripts/delete-participant-data.sql"))
         .execute(&mut *connection)
@@ -892,6 +931,13 @@ async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
     assert!(!retained.contains("target-wa"));
     assert!(!retained.contains("groups"));
     assert!(!retained.contains("future_identity_field"));
+    let minimized_group: serde_json::Value =
+        sqlx::query_scalar("SELECT payload FROM webhook_events WHERE provider_event_id = $1")
+            .bind("group-privacy-event")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(minimized_group, json!({}));
 }
 
 #[tokio::test]

@@ -80,6 +80,14 @@ WITH target_webhooks AS MATERIALIZED (
                       ) status
                       WHERE status->>'recipient_id' = current_setting('agora.participant_id')
                   )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM jsonb_path_query(
+                          we.payload,
+                          '$.entry[*].changes[*].value.groups.**'
+                      ) group_value
+                      WHERE group_value = to_jsonb(current_setting('agora.participant_id'))
+                  )
               )
           )
       )
