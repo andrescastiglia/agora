@@ -2,11 +2,6 @@
 
 Última revisión: 1 de septiembre de 2026.
 
-## Despliegue
-
-- [ ] Publicar el próximo tag `vX.X.X` sobre `main` y verificar en `oracle` la
-  migraciones `0011`–`0012`, `/ready` y los procedimientos de derechos de datos.
-
 ## Telegram
 
 - [ ] Regenerar en BotFather el token expuesto durante la puesta en marcha,
@@ -18,10 +13,11 @@
 
 ## WhatsApp y Meta
 
-- [ ] Obtener OBA y elegibilidad para Groups API; crear el grupo oficial,
-  invitar a los seis participantes y configurar su ID y allowlist en `oracle`.
-- [ ] Completar las llamadas y el screencast de App Review, enviar la revisión
-  y obtener acceso avanzado para `whatsapp_business_management` y
+- [ ] Escalar a Meta o a un BSP la habilitación de la solicitud OBA y obtenerla;
+  habilitar Groups API, crear el grupo oficial, invitar a los seis participantes
+  y configurar su ID y allowlist en `oracle`.
+- [ ] Grabar el screencast con el grupo real, completar y enviar App Review, y
+  obtener acceso avanzado para `whatsapp_business_management` y
   `whatsapp_business_messaging`.
 - [ ] Probar el flujo real completo de WhatsApp: entrada y deduplicación,
   documento, respuesta con citas y estados salientes.

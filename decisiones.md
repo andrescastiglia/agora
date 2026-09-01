@@ -82,7 +82,8 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
   real de crear el grupo volvió a devolver `131215` el 30/07/2026 porque el
   número todavía no es elegible para Groups API. La auditoría del 01/09/2026
   confirmó `account_review_status=APPROVED`, pero
-  `official_business_account=null` y ningún grupo configurado.
+  `oba_status=NOT_STARTED`; WhatsApp Manager mantiene deshabilitada la solicitud
+  y Groups API no expone todavía el recurso de grupos.
 - El perfil empresarial enlaza directamente a `/privacy` y `/terms`; se retiró
   la URL raíz porque devuelve `404` y podía perjudicar la validación externa
   del nombre comercial.
@@ -109,9 +110,10 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 - App Review está iniciado con sólo `whatsapp_business_messaging` y
   `whatsapp_business_management`; `public_profile` se retiró porque Agora no lo
   utiliza. Las descripciones y el formulario de tratamiento de datos quedaron
-  preparados; el borrador figura `Not submitted` el 30/07/2026 y faltan el
-  screencast y las llamadas reales dependientes del grupo. Al 01/09/2026 ambos
-  permisos siguen sin acceso avanzado.
+  preparados; el borrador figura `Not submitted`. Al 01/09/2026 Meta marca las
+  llamadas API requeridas como `Completed`, pero faltan el screencast con el
+  grupo real y completar las cuatro secciones de la solicitud. Ambos permisos
+  siguen sin acceso avanzado.
 - Agora es un RAG de dominio limitado al conocimiento del grupo, no un asistente
   general abierto. La revisión legal previa al piloto debe confirmar que esta
   caracterización cumple las condiciones vigentes de Meta para servicios de IA.
