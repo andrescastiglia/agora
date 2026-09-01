@@ -114,13 +114,6 @@ INSERT INTO deletion_counts SELECT 'messages', count(*) FROM deleted;
 SELECT jsonb_build_object(
     'deleted_at', now(),
     'provider', current_setting('agora.provider'),
-    'participant_hash', encode(
-        digest(
-            current_setting('agora.provider') || ':' || current_setting('agora.participant_id'),
-            'sha256'
-        ),
-        'hex'
-    ),
     'counts', COALESCE(jsonb_object_agg(object_type, deleted_count), '{}'::jsonb)
 )
 FROM deletion_counts;

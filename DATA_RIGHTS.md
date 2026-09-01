@@ -39,8 +39,8 @@ de auditoría.
 La operación elimina mensajes, adjuntos, chunks, jobs y respuestas asociados;
 minimiza payloads de webhooks todavía pendientes; genera un backup nuevo y
 destruye los backups cifrados anteriores. El log
-`/var/log/agora-data-deletions.log` conserva fecha, conteos y un hash irreversible
-del identificador, pero no el identificador original.
+`/var/log/agora-data-deletions.log` conserva fecha, proveedor y conteos por tipo
+de objeto, pero ningún identificador ni derivación del identificador.
 
 ## Restauraciones
 

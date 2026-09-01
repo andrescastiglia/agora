@@ -809,8 +809,18 @@ async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
                 "value": {
                     "metadata": {"phone_number_id": "phone"},
                     "messages": [
-                        {"from": "target-wa", "id": "target-message", "text": {"body": "target secret"}},
-                        {"from": "other-wa", "id": "other-message", "text": {"body": "other secret"}}
+                        {
+                            "from": "target-wa",
+                            "id": "target-message",
+                            "text": {"body": "target secret"},
+                            "context": {"id": "other-parent", "from": "other-wa"}
+                        },
+                        {
+                            "from": "other-wa",
+                            "id": "other-message",
+                            "text": {"body": "other secret"},
+                            "context": {"id": "target-parent", "from": "target-wa"}
+                        }
                     ],
                     "contacts": [
                         {"wa_id": "target-wa", "profile": {"name": "Target"}},
@@ -819,7 +829,11 @@ async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
                     "statuses": [
                         {"recipient_id": "target-wa", "id": "target-status"},
                         {"recipient_id": "other-wa", "id": "other-status"}
-                    ]
+                    ],
+                    "groups": [
+                        {"type": "participants_update", "participants": ["target-wa", "other-wa"]}
+                    ],
+                    "future_identity_field": {"participant": "other-wa"}
                 }
             }]
         }]
@@ -849,9 +863,12 @@ async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
     assert!(exported_payload.contains("target-message"));
     assert!(exported_payload.contains("target-status"));
     assert!(exported_payload.contains("target-wa"));
+    assert!(exported_payload.contains("other-parent"));
     assert!(!exported_payload.contains("other-message"));
     assert!(!exported_payload.contains("other-status"));
     assert!(!exported_payload.contains("other-wa"));
+    assert!(!exported_payload.contains("groups"));
+    assert!(!exported_payload.contains("future_identity_field"));
 
     sqlx::raw_sql(include_str!("../scripts/delete-participant-data.sql"))
         .execute(&mut *connection)
@@ -869,9 +886,12 @@ async fn participant_rights_filter_mixed_whatsapp_webhook_payloads() {
     assert!(retained.contains("other-message"));
     assert!(retained.contains("other-status"));
     assert!(retained.contains("other-wa"));
+    assert!(retained.contains("target-parent"));
     assert!(!retained.contains("target-message"));
     assert!(!retained.contains("target-status"));
     assert!(!retained.contains("target-wa"));
+    assert!(!retained.contains("groups"));
+    assert!(!retained.contains("future_identity_field"));
 }
 
 #[tokio::test]
