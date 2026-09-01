@@ -35,7 +35,7 @@ pub async fn health() -> Json<Health> {
 }
 
 pub async fn ready(State(state): State<AppState>) -> Response {
-    if !state.config.active_provider_ready() {
+    if !state.config.active_provider_ready() || !state.config.openai_ready() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({"status": "unavailable"})),
@@ -238,8 +238,12 @@ mod tests {
     use crate::{AppState, build_router, config::Config};
 
     fn app(provider: &str) -> axum::Router {
-        let config = Config::from_map(HashMap::from([
-            ("DATABASE_URL".into(), "postgres://localhost/agora".into()),
+        app_with(provider, "postgres://localhost/agora", None)
+    }
+
+    fn app_with(provider: &str, database_url: &str, openai_key: Option<&str>) -> axum::Router {
+        let mut values = HashMap::from([
+            ("DATABASE_URL".into(), database_url.into()),
             ("KNOWLEDGE_SPACE_ID".into(), "agora".into()),
             ("CHAT_PROVIDER".into(), provider.into()),
             ("TELEGRAM_BOT_TOKEN".into(), "test-token".into()),
@@ -254,8 +258,11 @@ mod tests {
             ("WHATSAPP_WABA_ID".into(), "waba".into()),
             ("WHATSAPP_GROUP_ID".into(), "group".into()),
             ("WHATSAPP_ALLOWED_USER_IDS".into(), "sender".into()),
-        ]))
-        .unwrap();
+        ]);
+        if let Some(openai_key) = openai_key {
+            values.insert("OPENAI_API_KEY".into(), openai_key.into());
+        }
+        let config = Config::from_map(values).unwrap();
         let db = PgPoolOptions::new()
             .connect_lazy(config.database_url.expose())
             .unwrap();
@@ -402,5 +409,24 @@ mod tests {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = response.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(body, r#"{"accepted":false}"#);
+    }
+
+    #[tokio::test]
+    async fn readiness_requires_openai_and_a_reachable_database() {
+        let Ok(database_url) = std::env::var("TEST_DATABASE_URL") else {
+            eprintln!("TEST_DATABASE_URL is not set; readiness integration test skipped");
+            return;
+        };
+        let without_openai = app_with("telegram", &database_url, None)
+            .oneshot(Request::get("/ready").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(without_openai.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let ready = app_with("telegram", &database_url, Some("test-openai-key"))
+            .oneshot(Request::get("/ready").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(ready.status(), StatusCode::OK);
     }
 }

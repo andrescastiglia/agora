@@ -12,6 +12,10 @@ instancia y Telegram es el predeterminado. No hay aplicación web. Los únicos
 endpoints públicos son ambos webhooks, health, readiness y los tres avisos
 legales.
 
+El repositorio usa una única rama, `main`. Los pushes ejecutan CI y no
+despliegan; sólo un tag exacto `vX.X.X` sobre el último commit de `main` libera
+y despliega en el único environment, `oracle`.
+
 La versión 1:
 
 - usa exclusivamente Telegram Bot API y WhatsApp Cloud/Groups API oficiales;
@@ -50,7 +54,8 @@ shutdown. La conducta testeable debe permanecer en la biblioteca.
    original para WhatsApp y secreto constante para Telegram.
 2. Autenticar pero no persistir eventos del proveedor inactivo; persistir el
    evento original del proveedor activo antes de responder.
-3. Mantener webhook, jobs, mensajes y respuestas salientes idempotentes.
+3. Mantener webhook, jobs y mensajes idempotentes; persistir una sola respuesta
+   saliente por mensaje y no repetir automáticamente un intento ambiguo.
 4. No realizar red, extracción ni generación dentro del handler HTTP.
 5. No procesar mensajes 1:1 ni grupos distintos al configurado para cada proveedor.
 6. No enviar respuestas para participantes fuera de la allowlist del proveedor.
@@ -60,13 +65,17 @@ shutdown. La conducta testeable debe permanecer en la biblioteca.
 10. Agregar migraciones; nunca modificar una migración ya aplicada.
 11. Eventos y jobs del proveedor inactivo permanecen congelados. El proveedor
     persistido es autoritativo para descargar y enviar.
+12. Minimizar `webhook_events.payload` al completar o descartar definitivamente
+    un evento; conservar proveedor, ID externo y hash para deduplicación.
+13. Realizar un único intento automático de envío. Si el resultado de red es
+    ambiguo, registrar `delivery_unknown` y no reenviar automáticamente.
 
 ## Seguridad y secretos
 
 `auth.json`, `.env` y cualquier archivo de credenciales son locales y están
 ignorados. No mostrar su contenido en logs, respuestas, tests o commits.
 
-Los secretos productivos viven en `/etc/agora/agora.env` en `oracle` y en el
+Los secretos de la instancia viven en `/etc/agora/agora.env` en `oracle` y en el
 environment GitHub `oracle`. Los secrets de aplicación nunca deben viajar como
 argumentos de Docker ni guardarse en artefactos.
 
@@ -91,7 +100,9 @@ entornos completos de PM2 porque pueden contener secretos de otros proyectos.
 Las migraciones se ejecutan con `sqlx::migrate!()` al iniciar. Todo cambio debe
 preservar:
 
-- `webhook_events.payload` como fuente original;
+- `webhook_events.payload` como fuente original mientras el evento está
+  pendiente o en procesamiento; al llegar a un estado terminal se reemplaza
+  por un objeto vacío;
 - claves externas únicas;
 - proveedor explícito en eventos, mensajes, adjuntos, jobs y salidas;
 - reintentos con error sanitizado y estado dead-letter;
@@ -100,6 +111,10 @@ preservar:
   vigente;
 - `attachments.original_data` conserva el original y
   `attachments.content_sha256` su hash.
+
+Un documento con caption se indexa como una sola fuente: caption y texto
+extraído comparten un conjunto de chunks. El adjunto pasa a `completed` en la
+misma transacción que persiste esos chunks.
 
 El worker puede ejecutar una operación más de una vez. Cada paso debe producir
 el mismo resultado o detectar que ya fue completado.
@@ -110,6 +125,10 @@ Telegram usa Bot API oficial, secreto de webhook, `getFile`/descarga con límite
 de 20 MiB y `sendMessage` con reply cuando sea posible. WhatsApp usa Graph API
 `v25.0`, salvo migración explícita, y su payload grupal conserva
 `recipient_type: "group"`.
+
+Los estados salientes nunca retroceden. `sending` representa el único intento
+automático y `delivery_unknown` exige revisión manual antes de cualquier nueva
+acción.
 
 OpenAI usa:
 
@@ -143,12 +162,12 @@ Si cambian Docker, Nginx o el deploy, validar también:
 
 ```bash
 AGORA_ENV_FILE=.env.example AGORA_IMAGE=agora:test \
-  docker compose -f compose.production.yml config
+  docker compose -f compose.oracle.yml config
 ```
 
 ## Criterio de terminado
 
 Una tarea sólo está terminada cuando el código real, las migraciones, las
 pruebas, la documentación y la evidencia externa coinciden. No marcar activos
-de Meta, secretos, DNS, certificados, GitHub o producción como listos a partir
-de intención o configuración local; verificar el estado real correspondiente.
+de Meta, secretos, DNS, certificados, GitHub u `oracle` como listos a partir de
+intención o configuración local; verificar el estado real correspondiente.
