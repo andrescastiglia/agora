@@ -1,33 +1,28 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-
-if [[ $# -ne 1 ]]; then
-  echo "usage: test-restore-postgres.sh /path/to/agora-*.dump.enc" >&2
-  exit 2
-fi
-
+source "$(dirname "${BASH_SOURCE[0]}")/runtime-common.sh"
+[[ $# == 1 ]] || { echo 'usage: test-restore-postgres.sh encrypted-dump' >&2; exit 2; }
 readonly backup="$1"
 readonly passphrase_file="${AGORA_BACKUP_PASSPHRASE_FILE:-/etc/agora/backup-passphrase}"
-readonly restore_db="agora_restore_test"
-readonly temporary="$(mktemp)"
-
+readonly restore_db="agora_restore_test_$(date +%s)_$$"
+created=0
+pg() {
+  if [[ "$AGORA_RUNTIME_BACKEND" == kubernetes ]]; then
+    agora_kubectl exec -i postgres-0 -- "$@" -U postgres
+  else
+    sudo -u postgres -H "$@"
+  fi
+}
 cleanup() {
-  rm -f "$temporary"
-  sudo -u postgres dropdb --if-exists "$restore_db" >/dev/null
+  if [[ "$created" == 1 ]]; then pg dropdb --if-exists "$restore_db" >/dev/null; fi
 }
 trap cleanup EXIT
-
 test -r "$backup"
 test -r "$passphrase_file"
-openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$passphrase_file" \
-  -in "$backup" -out "$temporary"
-chown postgres:postgres "$temporary"
-chmod 0600 "$temporary"
-
-sudo -u postgres dropdb --if-exists "$restore_db"
-sudo -u postgres createdb "$restore_db"
-sudo -u postgres pg_restore --dbname "$restore_db" --no-owner --no-acl "$temporary"
-sudo -u postgres psql --dbname "$restore_db" --no-psqlrc --tuples-only \
-  --command "SELECT count(*) FROM webhook_events" >/dev/null
-
-echo "Agora backup restored successfully into an isolated temporary database"
+pg createdb --template=template0 --encoding=UTF8 --locale=C.UTF-8 "$restore_db"
+created=1
+openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$passphrase_file" -in "$backup" |
+  pg pg_restore --dbname "$restore_db" --single-transaction --exit-on-error
+pg psql --dbname "$restore_db" -X -v ON_ERROR_STOP=1 -At \
+  -c 'SELECT count(*) FROM webhook_events; SELECT count(*) FROM _sqlx_migrations WHERE success; SELECT count(*) FROM attachments; SELECT count(*) FROM document_chunks;' >/dev/null
+echo 'Agora backup restored successfully into an isolated temporary database'

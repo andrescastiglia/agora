@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/runtime-common.sh"
 
 if [[ $# -ne 3 ]]; then
   echo "usage: export-participant-data.sh <telegram|whatsapp> <participant-id> <output.json>" >&2
@@ -29,14 +30,7 @@ if [[ ! -d $(dirname "$destination") ]]; then
   exit 1
 fi
 
-if [[ -n ${AGORA_PSQL_DOCKER_SERVICE:-} ]]; then
-  psql_command=(
-    docker compose exec -T "$AGORA_PSQL_DOCKER_SERVICE"
-    psql --username "${AGORA_DATABASE_USER:-agora}" --dbname "$database_name"
-  )
-else
-  psql_command=(sudo -u postgres -H psql --dbname "$database_name")
-fi
+psql_command=(agora_psql)
 
 umask 077
 temporary="$(mktemp "${destination}.tmp.XXXXXX")"

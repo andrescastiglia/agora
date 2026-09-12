@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/runtime-common.sh"
 
 readonly backup_dir="${AGORA_BACKUP_DIR:-/var/backups/agora}"
 readonly passphrase_file="${AGORA_BACKUP_PASSPHRASE_FILE:-/etc/agora/backup-passphrase}"
@@ -11,7 +12,7 @@ install -d -o root -g root -m 0700 "$backup_dir"
 test -r "$passphrase_file"
 trap 'rm -f "$temporary"' EXIT
 
-sudo -u postgres pg_dump --format=custom --no-owner --no-acl agora |
+agora_dump |
   openssl enc -aes-256-cbc -salt -pbkdf2 -pass "file:$passphrase_file" \
     -out "$temporary"
 

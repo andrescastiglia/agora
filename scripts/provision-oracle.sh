@@ -68,6 +68,7 @@ nginx -t
 systemctl reload nginx
 
 if [[ -f /opt/agora/backup-postgres.sh ]]; then
+  install -o root -g root -m 0644 /opt/agora/runtime-common.sh /usr/local/sbin/runtime-common.sh
   install -o root -g root -m 0750 /opt/agora/backup-postgres.sh \
     /usr/local/sbin/agora-backup-postgres
   install -o root -g root -m 0750 /opt/agora/test-restore-postgres.sh \

@@ -142,6 +142,10 @@ cadena completa hasta `0012`.
 
 ## Oracle
 
+La migración y operación con K3s y PostgreSQL StatefulSet están documentadas en
+[KUBERNETES.md](KUBERNETES.md). El backend activo se selecciona en el servidor
+mediante `/etc/agora/runtime.conf`; los releases soportan Compose y Kubernetes.
+
 `main` es la única rama del repositorio. Cada push ejecuta CI, pero no despliega.
 El único despliegue se inicia al crear sobre el último commit de `main` un tag
 con formato exacto `vX.X.X` y publicarlo en GitHub:

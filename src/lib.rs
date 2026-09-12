@@ -5,11 +5,12 @@ pub mod http;
 pub mod legal;
 pub mod openai;
 pub mod repository;
+pub mod runtime;
 pub mod security;
 pub mod text;
 pub mod worker;
 
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicBool};
 
 use axum::{Router, routing::get};
 use sqlx::PgPool;
@@ -25,6 +26,7 @@ use crate::{
 pub struct AppState {
     pub config: Arc<Config>,
     pub db: PgPool,
+    pub worker_ready: Arc<AtomicBool>,
 }
 
 pub fn build_router(state: AppState) -> Router {

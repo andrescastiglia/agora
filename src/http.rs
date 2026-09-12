@@ -35,7 +35,12 @@ pub async fn health() -> Json<Health> {
 }
 
 pub async fn ready(State(state): State<AppState>) -> Response {
-    if !state.config.active_provider_ready() || !state.config.openai_ready() {
+    if !state
+        .worker_ready
+        .load(std::sync::atomic::Ordering::Acquire)
+        || !state.config.active_provider_ready()
+        || !state.config.openai_ready()
+    {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({"status": "unavailable"})),
@@ -269,6 +274,7 @@ mod tests {
         build_router(AppState {
             config: Arc::new(config),
             db,
+            worker_ready: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         })
     }
 
