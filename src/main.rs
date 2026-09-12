@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
+};
 
 use agora::{AppState, build_router, config::Config, worker};
 use anyhow::Context;
@@ -25,23 +28,36 @@ async fn main() -> anyhow::Result<()> {
 
     let worker_db = db.clone();
     let worker_config = config.clone();
-    tokio::spawn(async move {
-        worker::run(worker_db, worker_config).await;
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+    let worker_shutdown = shutdown_rx.clone();
+    let worker_ready = Arc::new(AtomicBool::new(true));
+    let worker = tokio::spawn(async move {
+        worker::run(worker_db, worker_config, worker_shutdown).await;
     });
 
     let app = build_router(AppState {
         config: config.clone(),
         db,
+        worker_ready: worker_ready.clone(),
     });
     let address = config.bind_addr;
     info!(%address, "Agora API listening");
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .context("failed to bind HTTP listener")?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("HTTP server failed")?;
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        let _ = shutdown_rx.changed().await;
+    });
+    let supervisor = agora::runtime::supervise(
+        worker,
+        shutdown_tx,
+        worker_ready,
+        shutdown_signal(),
+        Duration::from_secs(300),
+    );
+    let (http_result, worker_result) = tokio::join!(async { server.await }, supervisor);
+    http_result.context("HTTP server failed")?;
+    worker_result?;
     Ok(())
 }
 

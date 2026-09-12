@@ -25,11 +25,16 @@ use crate::{
     text::{chunks, source_context},
 };
 
-pub async fn run(db: PgPool, config: Arc<Config>) {
-    loop {
+pub async fn run(
+    db: PgPool,
+    config: Arc<Config>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    while !*shutdown.borrow() {
         let result = match process_next_webhook(&db, &config).await {
             Ok(true) => continue,
-            Ok(false) => process_next_job(&db, &config).await,
+            Ok(false) if !*shutdown.borrow() => process_next_job(&db, &config).await,
+            Ok(false) => break,
             Err(error) => Err(error),
         };
         match result {
@@ -37,7 +42,10 @@ pub async fn run(db: PgPool, config: Arc<Config>) {
             Ok(false) => {}
             Err(error) => tracing::error!(%error, "worker iteration failed"),
         }
-        tokio::time::sleep(config.worker_poll_interval).await;
+        tokio::select! {
+            _ = tokio::time::sleep(config.worker_poll_interval) => {},
+            _ = shutdown.changed() => break,
+        }
     }
 }
 
@@ -460,6 +468,20 @@ mod tests {
                 }
             }
         })
+    }
+
+    #[tokio::test]
+    async fn stopped_worker_does_not_claim_database_work() {
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost:1/unused")
+            .unwrap();
+        let (_tx, rx) = tokio::sync::watch::channel(true);
+        tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            run(db, Arc::new(worker_config("telegram")), rx),
+        )
+        .await
+        .unwrap();
     }
 
     #[test]

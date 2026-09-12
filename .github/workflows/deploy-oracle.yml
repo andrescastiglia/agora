@@ -66,6 +66,10 @@ jobs:
         run: cargo fmt --check
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Validate operational scripts
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+          python3 tests/test_deploy_scripts.py
       - name: Run tests
         run: cargo test --workspace --all-features --all-targets --locked
 
@@ -202,7 +206,8 @@ jobs:
     name: deploy-oracle
     needs: manifest
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Budget both 600-second rollout watches, transfers and health checks.
+    timeout-minutes: 30
     environment: oracle
     permissions:
       contents: read
@@ -228,10 +233,12 @@ jobs:
       - name: Upload deployment manifests
         run: |
           scp -P "$ORACLE_PORT" compose.oracle.yml scripts/deploy-oracle.sh \
-            scripts/configure-telegram-webhook.sh \
+            scripts/configure-telegram-webhook.sh scripts/runtime-common.sh \
+            scripts/backup-postgres.sh scripts/test-restore-postgres.sh \
             scripts/export-participant-data.sh scripts/export-participant-data.sql \
             scripts/delete-participant-data.sh scripts/delete-participant-data.sql \
             "$ORACLE_USER@$ORACLE_HOST:$ORACLE_DEPLOY_PATH/"
+          scp -r -P "$ORACLE_PORT" k8s "$ORACLE_USER@$ORACLE_HOST:$ORACLE_DEPLOY_PATH/"
       - name: Authenticate oracle to GHCR for this deployment
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

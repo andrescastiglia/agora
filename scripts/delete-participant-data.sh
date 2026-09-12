@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/runtime-common.sh"
 
 if [[ $# -ne 4 || $1 != "--confirm" ]]; then
   echo "usage: delete-participant-data.sh --confirm <--replace-backups|--test-no-backups> <telegram|whatsapp> <participant-id>" >&2
@@ -51,18 +52,26 @@ if [[ $backup_mode == "--replace-backups" ]]; then
   test -x "$backup_command"
 fi
 
+# Serialize quiescing/deletion with releases, migration and legacy retirement.
+exec 9>"${AGORA_OPERATION_LOCK:-/opt/agora/.deploy.lock}"
+flock -n 9 || { echo 'another Agora operation is running' >&2; exit 1; }
 restart_runtime=0
 resume_runtime() {
   if [[ $restart_runtime == "1" ]]; then
-    docker start "$runtime_container" >/dev/null ||
+    agora_start ||
       echo "CRITICAL: failed to restart $runtime_container" >&2
   fi
 }
 
 if [[ $skip_runtime_quiesce != "1" ]]; then
-  runtime_running="$(docker inspect --format '{{.State.Running}}' "$runtime_container")"
+  if [[ "$AGORA_RUNTIME_BACKEND" == kubernetes ]]; then
+    replicas="$(agora_kubectl get deployment agora -o jsonpath='{.spec.replicas}')"
+    case "$replicas" in 0) runtime_running=false;; 1) runtime_running=true;; *) echo "unexpected replica count" >&2; exit 1;; esac
+  else
+    runtime_running="$(docker inspect --format '{{.State.Running}}' "$runtime_container")"
+  fi
   if [[ $runtime_running == "true" ]]; then
-    docker stop "$runtime_container" >/dev/null
+    agora_stop
     restart_runtime=1
     trap resume_runtime EXIT
   elif [[ $runtime_running != "false" ]]; then
@@ -71,14 +80,7 @@ if [[ $skip_runtime_quiesce != "1" ]]; then
   fi
 fi
 
-if [[ -n ${AGORA_PSQL_DOCKER_SERVICE:-} ]]; then
-  psql_command=(
-    docker compose exec -T "$AGORA_PSQL_DOCKER_SERVICE"
-    psql --username "${AGORA_DATABASE_USER:-agora}" --dbname "$database_name"
-  )
-else
-  psql_command=(sudo -u postgres -H psql --dbname "$database_name")
-fi
+psql_command=(agora_psql)
 
 summary="$(
   "${psql_command[@]}" --no-psqlrc --set ON_ERROR_STOP=1 --quiet --tuples-only --no-align \
@@ -89,6 +91,27 @@ summary="$(
     )
 )"
 test -n "$summary"
+
+# Retained migration copies must not resurrect a deleted participant.
+if [[ -f /etc/agora/legacy-databases ]]; then
+  while IFS= read -r legacy_db; do
+    [[ "$legacy_db" =~ ^agora[a-z0-9_]*$ ]] || { echo 'invalid legacy database marker' >&2; exit 1; }
+    if [[ "$AGORA_RUNTIME_BACKEND" == compose && "$legacy_db" == "$database_name" ]]; then continue; fi
+    exists="$(sudo -u postgres -H psql -X -At -d postgres -c "SELECT count(*) FROM pg_database WHERE datname='$legacy_db'")"
+    if [[ "$exists" == 1 ]]; then
+      sudo -u postgres -H psql -X -q -v ON_ERROR_STOP=1 -d "$legacy_db" < <(
+        printf "SET agora.provider = '%s'; SET agora.participant_id = '%s';\n" "$provider" "$participant_id"
+        cat "$script_dir/delete-participant-data.sql"
+      ) >/dev/null
+    fi
+  done </etc/agora/legacy-databases
+fi
+if [[ "$AGORA_RUNTIME_BACKEND" == compose && -f /var/lib/agora-migration/rollback.completed ]]; then
+  agora_kubectl exec -i postgres-0 -- psql -U postgres -X -q -v ON_ERROR_STOP=1 -d agora < <(
+    printf "SET agora.provider = '%s'; SET agora.participant_id = '%s';\n" "$provider" "$participant_id"
+    cat "$script_dir/delete-participant-data.sql"
+  ) >/dev/null
+fi
 
 write_audit() {
   local backup_status="$1"
@@ -118,13 +141,16 @@ if [[ $backup_mode == "--replace-backups" ]]; then
       fi
     fi
   done < <(find "$backup_dir" -maxdepth 1 -type f -name 'agora-*.dump.enc' -print)
+  if [[ -d /var/backups/agora-migration ]]; then
+    find /var/backups/agora-migration -maxdepth 1 -type f -name '*.enc' -delete
+  fi
   write_audit "completed"
 else
   write_audit "not_requested"
 fi
 
 if [[ $restart_runtime == "1" ]]; then
-  if ! docker start "$runtime_container" >/dev/null; then
+  if ! agora_start; then
     write_audit "runtime_restart_failed"
     echo "failed to restart $runtime_container" >&2
     exit 1

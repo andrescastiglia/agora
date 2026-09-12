@@ -1,6 +1,6 @@
 # Decisiones de Agora
 
-Última actualización: 1 de septiembre de 2026.
+Última actualización: 12 de septiembre de 2026.
 
 Este documento es autoritativo para la versión 1 y prevalece sobre propuestas
 anteriores del roadmap.
@@ -120,14 +120,24 @@ recurso técnico será el grupo creado por Groups API. No se adoptará un fallba
 
 ## Infraestructura
 
+La migración autorizada del 12/09/2026 adopta la siguiente arquitectura. El
+backend activo durante la transición se verifica en `/etc/agora/runtime.conf`;
+el procedimiento y sus pruebas están en `KUBERNETES.md`.
+
 - Dominio: `agora.maese.com.ar`.
 - Servidor: alias SSH `oracle`, Ubuntu ARM64.
 - Nginx y Certbot terminan TLS.
-- La API escucha sólo en `127.0.0.1:8088`.
-- PostgreSQL 17 y pgvector escuchan sólo en localhost.
+- Agora corre en un Deployment de una réplica, con API y worker juntos; el
+  pod escucha en `8080` y Nginx conecta a `127.0.0.1:30088`.
+- PostgreSQL 17 y pgvector de Agora usan un StatefulSet de una réplica y un
+  PV local retenido en el disco existente. Su Service no se publica al host.
+- El PostgreSQL compartido del host se conserva para los demás proyectos.
 - Los servicios existentes de `oracle` deben preservarse.
-- La aplicación se ejecuta en Docker Compose bajo el usuario `deploy`; PM2 de
-  otros proyectos no se modifica.
+- K3s usa containerd independiente de Docker. Los releases de Agora actualizan
+  únicamente la aplicación mediante permisos limitados del usuario `deploy`.
+- Compose se conserva como vía de reversión; PM2 y Docker de otros proyectos
+  no se modifican. La migración admite interrupción sin límite exigido.
+- El nodo y el disco son únicos: esta arquitectura no proporciona HA.
 - No se guardan backups fuera de `oracle`, por decisión del responsable. Esta
   decisión reduce la capacidad de recuperación ante pérdida total de la VM.
 

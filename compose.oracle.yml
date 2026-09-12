@@ -8,6 +8,7 @@ services:
     environment:
       BIND_ADDR: 127.0.0.1:8088
     restart: unless-stopped
+    stop_grace_period: 330s
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777

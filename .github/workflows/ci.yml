@@ -42,6 +42,10 @@ jobs:
         run: cargo fmt --check
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Validate operational scripts
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+          python3 tests/test_deploy_scripts.py
       - name: Run tests
         run: cargo test --workspace --all-features --all-targets --locked
       - name: Install coverage tool

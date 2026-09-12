@@ -142,6 +142,10 @@ cadena completa hasta `0012`.
 
 ## Oracle
 
+La migración y operación con K3s y PostgreSQL StatefulSet están documentadas en
+[KUBERNETES.md](KUBERNETES.md). El backend activo se selecciona en el servidor
+mediante `/etc/agora/runtime.conf`; los releases soportan Compose y Kubernetes.
+
 `main` es la única rama del repositorio. Cada push ejecuta CI, pero no despliega.
 El único despliegue se inicia al crear sobre el último commit de `main` un tag
 con formato exacto `vX.X.X` y publicarlo en GitHub:
@@ -153,8 +157,9 @@ git push origin v0.3.0
 
 El workflow vuelve a ejecutar formato, Clippy y pruebas, publica la imagen
 ARM64/AMD64 con el tag de versión y despliega su digest en el único environment
-`oracle`, con readiness y rollback. Nginx publica únicamente `80/443`; Agora y
-PostgreSQL escuchan en loopback.
+`oracle`, con readiness y rollback. Nginx conserva `80/443`. En Kubernetes conecta al NodePort de Agora
+en loopback; PostgreSQL usa exclusivamente un Service interno. El PostgreSQL
+del host sigue atendiendo a los otros proyectos.
 
 Cada respuesta saliente realiza un solo intento automático. Si el proveedor
 acepta la solicitud pero la confirmación de red es ambigua, queda en
