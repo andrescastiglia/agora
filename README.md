@@ -157,8 +157,9 @@ git push origin v0.3.0
 
 El workflow vuelve a ejecutar formato, Clippy y pruebas, publica la imagen
 ARM64/AMD64 con el tag de versión y despliega su digest en el único environment
-`oracle`, con readiness y rollback. Nginx publica únicamente `80/443`; Agora y
-PostgreSQL escuchan en loopback.
+`oracle`, con readiness y rollback. Nginx conserva `80/443`. En Kubernetes conecta al NodePort de Agora
+en loopback; PostgreSQL usa exclusivamente un Service interno. El PostgreSQL
+del host sigue atendiendo a los otros proyectos.
 
 Cada respuesta saliente realiza un solo intento automático. Si el proveedor
 acepta la solicitud pero la confirmación de red es ambigua, queda en
