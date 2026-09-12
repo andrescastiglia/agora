@@ -90,3 +90,10 @@ El worker deja de tomar trabajos al apagar y espera hasta 300 segundos; el pod
 concede 330. Si agota el plazo, los claims siguen en PostgreSQL y se recuperan
 tras su lease de 15 minutos. `sending` y `delivery_unknown` nunca se reenvían
 solos. `/ready` también depende del worker; no valida credenciales con APIs externas.
+
+Después del corte, `install-k8s-operations.sh` instala y habilita observaciones
+cada cinco minutos, backup diario del clúster y revisión diaria del retiro de la
+base antigua. El retiro requiere siete días, 48 horas de observaciones exitosas
+sin huecos mayores a diez minutos y una restauración recién probada. Ante cualquier
+fallo conserva la fuente; no fuerza la eliminación. Los resultados se guardan en
+`/var/log/agora-k8s-observation.jsonl` y `/var/lib/agora-migration/legacy.retired`.
