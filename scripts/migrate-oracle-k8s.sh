@@ -12,7 +12,7 @@ exec 9>/opt/agora/.deploy.lock
 flock -n 9 || { echo 'another Agora operation is running' >&2; exit 1; }
 pg_host() { sudo -u postgres -H "$@"; }
 pg_pod() { k3s kubectl exec -i -n agora postgres-0 -- "$@" -U postgres; }
-fingerprint_host() { pg_host psql -X -At -d "$1" -f "$script_dir/database-fingerprint.sql"; }
+fingerprint_host() { pg_host psql -X -At -d "$1" <"$script_dir/database-fingerprint.sql"; }
 fingerprint_pod() { pg_pod psql -X -At -d "$1" <"$script_dir/database-fingerprint.sql"; }
 set_runtime() {
   printf 'AGORA_RUNTIME_BACKEND=%s\nAGORA_DATABASE_NAME=%s\n' "$1" "$2" > /etc/agora/runtime.conf.tmp
