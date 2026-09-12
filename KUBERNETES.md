@@ -51,7 +51,7 @@ Requiere el preflight reciente en `/var/lib/agora-migration/preflight-ok`, gener
 solo después de revisar 15 minutos de carga, memoria y al menos 30 GiB libres.
 
 Antes de ejecutarlo, instalar el upstream Nginx `agora_backend` y el control
-`/etc/agora/webhooks-maintenance`: solo los webhooks devuelven 503 cuando el
+`/etc/nginx/agora-webhooks-maintenance`: solo los webhooks devuelven 503 cuando el
 archivo existe. Las páginas legales permanecen disponibles.
 
 1. Ensayar dump/restore en `agora_rehearsal` con la API detenida para esa copia.

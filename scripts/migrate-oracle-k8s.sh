@@ -26,8 +26,8 @@ set_port() {
   if ! nginx -t; then cp "$state_dir/upstream.previous" /etc/nginx/conf.d/agora-upstream.conf; return 1; fi
   systemctl reload nginx
 }
-maintenance() { touch /etc/agora/webhooks-maintenance; }
-release_maintenance() { rm -f /etc/agora/webhooks-maintenance; }
+maintenance() { touch /etc/nginx/agora-webhooks-maintenance; }
+release_maintenance() { rm -f /etc/nginx/agora-webhooks-maintenance; }
 case "${1:-}" in
   cutover)
     [[ "$AGORA_RUNTIME_BACKEND" == compose ]]
