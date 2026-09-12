@@ -206,7 +206,8 @@ jobs:
     name: deploy-oracle
     needs: manifest
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Budget both 600-second rollout watches, transfers and health checks.
+    timeout-minutes: 30
     environment: oracle
     permissions:
       contents: read
