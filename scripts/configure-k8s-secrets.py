@@ -6,9 +6,27 @@ from pathlib import Path
 import secrets
 import shlex
 import subprocess
+import sys
 
 if os.geteuid() != 0:
     raise SystemExit('run as root')
+if sys.argv[1:] == ['--postgres-admin']:
+    p = Path('/etc/agora/postgres-admin-password')
+    if not p.exists():
+        descriptor = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, 'w') as stream:
+            stream.write(secrets.token_urlsafe(48))
+    obj = {'apiVersion':'v1','kind':'Secret',
+           'metadata':{'name':'postgres-admin','namespace':'agora'},
+           'type':'Opaque','stringData':{'password':p.read_text().strip()}}
+    result = subprocess.run(['k3s','kubectl','apply','--server-side','-f','-'],
+                            input=json.dumps(obj),text=True,capture_output=True)
+    if result.returncode:
+        raise SystemExit('failed to provision PostgreSQL admin Secret; details suppressed')
+    print('PostgreSQL admin Secret is ready; no credentials emitted')
+    raise SystemExit(0)
+if sys.argv[1:] not in [[], ['--application']]:
+    raise SystemExit('usage: configure-k8s-secrets.py --postgres-admin|--application')
 values = {}
 for line in Path('/etc/agora/agora.env').read_text().splitlines():
     if not line.strip() or line.lstrip().startswith('#'):

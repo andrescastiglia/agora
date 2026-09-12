@@ -97,3 +97,10 @@ base antigua. El retiro requiere siete días, 48 horas de observaciones exitosas
 sin huecos mayores a diez minutos y una restauración recién probada. Ante cualquier
 fallo conserva la fuente; no fuerza la eliminación. Los resultados se guardan en
 `/var/log/agora-k8s-observation.jsonl` y `/var/lib/agora-migration/legacy.retired`.
+
+Para reproducir la preparación desde un checkout confiable, ejecutar como root
+`scripts/bootstrap-oracle-k8s.sh` después de instalar K3s: crea namespace/PV,
+provisiona primero el Secret administrador protegido, arranca PostgreSQL y
+configura el rol de aplicación. También instala las herramientas operativas.
+El comando de corte vuelve a instalar esas herramientas antes de seleccionar
+Kubernetes, garantizando que el timer ejecute el backup actualizado.

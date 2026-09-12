@@ -31,6 +31,8 @@ release_maintenance() { rm -f /etc/nginx/agora-webhooks-maintenance; }
 case "${1:-}" in
   cutover)
     [[ "$AGORA_RUNTIME_BACKEND" == compose ]]
+    # Update the actual systemd executables, not only uploaded release files.
+    bash "$script_dir/install-k8s-operations.sh"
     [[ ! -e "$state_dir/cutover.started" ]] || { echo 'cutover already started; inspect state or rollback' >&2; exit 1; }
     test -f "$state_dir/preflight-ok"
     # Fresh operational preflight; its 15-minute sampling is recorded separately.

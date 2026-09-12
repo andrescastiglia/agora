@@ -3,7 +3,7 @@ set -Eeuo pipefail
 [[ $EUID == 0 ]] || { echo 'run as root' >&2; exit 1; }
 readonly source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 install -d -m 0700 /opt/agora-ops /var/lib/agora-migration
-for file in runtime-common.sh backup-postgres.sh test-restore-postgres.sh migrate-oracle-k8s.sh backup-k3s.sh retire-legacy-postgres.sh observe-k8s.py database-fingerprint.sql; do
+for file in install-k8s-operations.sh runtime-common.sh backup-postgres.sh test-restore-postgres.sh migrate-oracle-k8s.sh backup-k3s.sh retire-legacy-postgres.sh observe-k8s.py database-fingerprint.sql; do
   if [[ "$source_dir/$file" != "/opt/agora-ops/$file" ]]; then install -m 0750 -o root -g root "$source_dir/$file" "/opt/agora-ops/$file"; fi
 done
 install -m 0644 -o root -g root "$source_dir/runtime-common.sh" /usr/local/sbin/runtime-common.sh
