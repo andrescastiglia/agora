@@ -10,6 +10,16 @@ OLD = 'ghcr.io/andrescastiglia/agora@sha256:' + 'a' * 64
 NEW = 'ghcr.io/andrescastiglia/agora@sha256:' + 'b' * 64
 
 class DeployTests(unittest.TestCase):
+    def test_missing_backend_cannot_silently_select_legacy_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = dict(os.environ, AGORA_RUNTIME_CONFIG=str(Path(directory)/'missing'))
+            env.pop('AGORA_RUNTIME_BACKEND', None)
+            result = subprocess.run(['bash', '-c', 'source "$1"', 'bash',
+                                     str(ROOT/'scripts/runtime-common.sh')],
+                                    env=env,capture_output=True,text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('explicitly', result.stderr)
+
     def exercise(self, backend, failure):
         with tempfile.TemporaryDirectory() as directory:
             d = Path(directory)

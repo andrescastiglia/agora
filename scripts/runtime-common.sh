@@ -4,8 +4,11 @@ runtime_file="${AGORA_RUNTIME_CONFIG:-/etc/agora/runtime.conf}"
 if [[ -f "$runtime_file" ]]; then
   # The production file is root-owned and not writable by deploy.
   source "$runtime_file"
+elif [[ -z ${AGORA_RUNTIME_BACKEND:-} ]]; then
+  echo "Agora runtime configuration missing; select a backend explicitly" >&2
+  exit 2
 fi
-: "${AGORA_RUNTIME_BACKEND:=compose}"
+: "${AGORA_RUNTIME_BACKEND:?Agora runtime backend is required}"
 : "${AGORA_DATABASE_NAME:=agora}"
 case "$AGORA_RUNTIME_BACKEND" in compose|kubernetes) ;; *) echo 'invalid Agora runtime backend' >&2; exit 2;; esac
 agora_kubectl() { k3s kubectl -n agora "$@"; }

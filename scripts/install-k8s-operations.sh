@@ -3,6 +3,12 @@ set -Eeuo pipefail
 [[ $EUID == 0 ]] || { echo 'run as root' >&2; exit 1; }
 readonly source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 install -d -m 0700 /opt/agora-ops /var/lib/agora-migration
+if [[ ! -f /etc/agora/runtime.conf ]]; then
+  [[ ! -e /var/lib/agora-migration/cutover.started ]] || { echo 'runtime marker missing after migration started' >&2; exit 1; }
+  printf 'AGORA_RUNTIME_BACKEND=compose\nAGORA_DATABASE_NAME=agora\n' >/etc/agora/runtime.conf
+  chown root:deploy /etc/agora/runtime.conf
+  chmod 0640 /etc/agora/runtime.conf
+fi
 for file in install-k8s-operations.sh runtime-common.sh backup-postgres.sh test-restore-postgres.sh migrate-oracle-k8s.sh backup-k3s.sh retire-legacy-postgres.sh observe-k8s.py database-fingerprint.sql; do
   if [[ "$source_dir/$file" != "/opt/agora-ops/$file" ]]; then install -m 0750 -o root -g root "$source_dir/$file" "/opt/agora-ops/$file"; fi
 done
