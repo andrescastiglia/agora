@@ -62,8 +62,8 @@ archivo existe. Las páginas legales permanecen disponibles.
    el rol antiguo, cifra un dump final, restaura y compara antes de activar Agora.
 5. Probar backup/restauración y observar antes de retirar la fuente antigua.
 
-`migrate-oracle-k8s.sh rollback` detiene Kubernetes. Antes de completar el corte,
-recupera Compose sobre la fuente intacta. Después del corte siempre hace dump de
+`migrate-oracle-k8s.sh rollback` detiene Kubernetes. Antes de intentar activar el Deployment,
+recupera Compose sobre la fuente intacta. Desde `target.activated` siempre hace dump de
 la base nueva y restaura una base distinta en el host, compara y actualiza el
 endpoint de Compose. Si la base nueva está inaccesible, se detiene: no acepta
 pérdida de datos volviendo silenciosamente a la copia antigua.

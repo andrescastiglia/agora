@@ -71,6 +71,8 @@ case "${1:-}" in
     work="$(mktemp -d)"
     cp -R /opt/agora/k8s/app/. "$work/"
     sed -i "s/digest: sha256:[0-9a-f]*/digest: ${image##*@}/" "$work/kustomization.yaml"
+    # From this point the worker can write, even before public traffic opens.
+    touch "$state_dir/target.activated"
     k3s kubectl apply -k "$work"
     rm -rf "$work"
     k3s kubectl rollout status deployment/agora -n agora --timeout=600s
@@ -94,7 +96,7 @@ case "${1:-}" in
       k3s kubectl scale deployment/agora -n agora --replicas=0
       k3s kubectl wait -n agora --for=delete pod -l app=agora --timeout=360s
     fi
-    if [[ -e "$state_dir/cutover.completed" ]]; then
+    if [[ -e "$state_dir/target.activated" ]]; then
       # Always copy current state after activation; never use the obsolete host DB.
       rollback_db="agora_rollback_$(date -u +%Y%m%d%H%M%S)"
       pg_pod pg_dump -Fc --no-acl agora | openssl enc -aes-256-cbc -salt -pbkdf2 -pass "file:$passphrase" -out "$backup_dir/rollback.dump.enc"
