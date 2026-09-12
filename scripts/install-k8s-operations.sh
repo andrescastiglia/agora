@@ -9,7 +9,7 @@ if [[ ! -f /etc/agora/runtime.conf ]]; then
   chown root:deploy /etc/agora/runtime.conf
   chmod 0640 /etc/agora/runtime.conf
 fi
-for file in install-k8s-operations.sh runtime-common.sh backup-postgres.sh test-restore-postgres.sh migrate-oracle-k8s.sh backup-k3s.sh retire-legacy-postgres.sh observe-k8s.py database-fingerprint.sql; do
+for file in install-k8s-operations.sh update-database-url.py runtime-common.sh backup-postgres.sh test-restore-postgres.sh migrate-oracle-k8s.sh backup-k3s.sh retire-legacy-postgres.sh observe-k8s.py database-fingerprint.sql; do
   if [[ "$source_dir/$file" != "/opt/agora-ops/$file" ]]; then install -m 0750 -o root -g root "$source_dir/$file" "/opt/agora-ops/$file"; fi
 done
 install -m 0644 -o root -g root "$source_dir/runtime-common.sh" /usr/local/sbin/runtime-common.sh

@@ -46,7 +46,7 @@ case "${1:-}" in
     systemctl stop agora-backup.timer
     # Wait for a currently running backup before freezing writers.
     while systemctl is-active --quiet agora-backup.service; do sleep 2; done
-    provider="$(python3 -c 'from pathlib import Path; e=dict(l.split("=",1) for l in Path("/etc/agora/agora.env").read_text().splitlines() if l and not l.startswith("#") and "=" in l); print(e.get("CHAT_PROVIDER","telegram").strip("\"\x27"))')"
+    provider="$(python3 "$script_dir/update-database-url.py" --provider /etc/agora/agora.env)"
     [[ "$provider" == telegram || "$provider" == whatsapp ]]
     drained=0
     for attempt in $(seq 1 360); do
@@ -77,8 +77,11 @@ case "${1:-}" in
     curl -fsS --max-time 10 http://127.0.0.1:30088/ready >/dev/null
     set_port 30088
     set_runtime kubernetes agora
+    backup="$(/usr/local/sbin/agora-backup-postgres)"
+    /usr/local/sbin/agora-test-restore-postgres "$backup"
     printf 'agora\n' >/etc/agora/legacy-databases
     date -u +%FT%TZ >"$state_dir/cutover.completed"
+    bash "$script_dir/install-k8s-operations.sh"
     release_maintenance
     systemctl start agora-backup.timer
     curl -fsS --max-time 15 https://agora.maese.com.ar/ready
@@ -100,16 +103,7 @@ case "${1:-}" in
       fingerprint_pod agora >"$state_dir/rollback-source.fingerprint"
       fingerprint_host "$rollback_db" >"$state_dir/rollback-target.fingerprint"
       diff -u "$state_dir/rollback-source.fingerprint" "$state_dir/rollback-target.fingerprint"
-      python3 - "$rollback_db" <<'PY'
-from pathlib import Path
-import sys
-from urllib.parse import urlsplit,urlunsplit
-p=Path('/etc/agora/agora.env');lines=p.read_text().splitlines()
-for i,l in enumerate(lines):
- if l.startswith('DATABASE_URL='):
-  u=urlsplit(l.split('=',1)[1].strip('"\''));lines[i]='DATABASE_URL='+urlunsplit(u._replace(path='/'+sys.argv[1]))
-p.write_text('\n'.join(lines)+'\n')
-PY
+      python3 "$script_dir/update-database-url.py" /etc/agora/agora.env "$rollback_db"
     else
       rollback_db=agora
     fi
@@ -121,6 +115,7 @@ PY
     set_runtime compose "$rollback_db"
     set_port 8088
     date -u +%FT%TZ >"$state_dir/rollback.completed"
+    systemctl disable --now agora-k8s-observation.timer agora-retire-legacy.timer
     release_maintenance
     systemctl start agora-backup.timer
     echo 'Compose restored using the verified current database'

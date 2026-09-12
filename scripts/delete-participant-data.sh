@@ -52,6 +52,9 @@ if [[ $backup_mode == "--replace-backups" ]]; then
   test -x "$backup_command"
 fi
 
+# Serialize quiescing/deletion with releases, migration and legacy retirement.
+exec 9>"${AGORA_OPERATION_LOCK:-/opt/agora/.deploy.lock}"
+flock -n 9 || { echo 'another Agora operation is running' >&2; exit 1; }
 restart_runtime=0
 resume_runtime() {
   if [[ $restart_runtime == "1" ]]; then

@@ -6,10 +6,30 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+import importlib.util
+spec = importlib.util.spec_from_file_location('database_env', ROOT/'scripts/update-database-url.py')
+database_env = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(database_env)
 OLD = 'ghcr.io/andrescastiglia/agora@sha256:' + 'a' * 64
 NEW = 'ghcr.io/andrescastiglia/agora@sha256:' + 'b' * 64
 
 class DeployTests(unittest.TestCase):
+    def test_rollback_url_supports_export_quotes_and_preserves_credentials(self):
+        for prefix in ['', 'export ', '  export ']:
+            value = prefix+'DATABASE_URL="postgres://agora:test%23secret@127.0.0.1:5432/agora?sslmode=disable" # original\nCHAT_PROVIDER=telegram\n'
+            updated = database_env.rewrite_database_url(value, 'agora_rollback_20260912000000')
+            self.assertIn('test%23secret@127.0.0.1:5432/agora_rollback_20260912000000?sslmode=disable', updated)
+            self.assertIn('CHAT_PROVIDER=telegram', updated)
+
+    def test_rollback_rejects_missing_duplicate_or_non_host_endpoint(self):
+        line='DATABASE_URL=postgres://localhost/agora\n'
+        for value in ['', line+line, 'DATABASE_URL=postgres://postgres.agora.svc/agora\n']:
+            with self.assertRaises(ValueError):
+                database_env.rewrite_database_url(value, 'agora_rollback_20260912000000')
+
+    def test_provider_reader_supports_exported_values(self):
+        self.assertEqual(database_env.assignments('export CHAT_PROVIDER="whatsapp"', 'CHAT_PROVIDER')[0][2], 'whatsapp')
+
     def test_missing_backend_cannot_silently_select_legacy_database(self):
         with tempfile.TemporaryDirectory() as directory:
             env = dict(os.environ, AGORA_RUNTIME_CONFIG=str(Path(directory)/'missing'))

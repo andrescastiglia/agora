@@ -7,6 +7,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/runtime-common.sh"
 [[ -f /etc/agora/legacy-databases && -s /etc/agora/legacy-databases ]] || exit 0
 exec 9>/opt/agora/.deploy.lock
 flock -n 9 || exit 1
+cutover_epoch="$(date -d "$(cat /var/lib/agora-migration/cutover.completed)" +%s)"
+if (( $(date +%s) - cutover_epoch < 604800 )); then exit 0; fi
 python3 - <<'PY'
 import datetime,json,time
 from pathlib import Path

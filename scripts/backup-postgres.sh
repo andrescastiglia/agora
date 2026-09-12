@@ -9,6 +9,8 @@ readonly destination="$backup_dir/agora-$timestamp.dump.enc"
 readonly temporary="$destination.tmp"
 
 install -d -o root -g root -m 0700 "$backup_dir"
+exec 8>"$backup_dir/.backup.lock"
+flock -w 60 8 || { echo 'another Agora backup is running' >&2; exit 1; }
 test -r "$passphrase_file"
 trap 'rm -f "$temporary"' EXIT
 
